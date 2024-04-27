@@ -1,0 +1,99 @@
+{
+  "transparent_plastic": {
+    "type": "roughdielectric",
+    "distribution": "beckmann",
+    "alpha": 0.1,
+    "int_ior": "bk7",
+    "ext_ior": "air"
+  },
+
+  "aluminium": {
+    "type": "roughconductor",
+    "material": "Al",
+    "distribution": "ggx",
+    "alpha_u": 0.05,
+    "alpha_v": 0.3
+  },
+
+  "iron": {
+    "type": "roughconductor",
+    "eta": {
+      "type": "spectrum",
+      "filename": "3D/materials/Fe.eta.spd"
+    },
+    "k": {
+      "type": "spectrum",
+      "filename": "3D/materials/Fe.k.spd"
+    },
+    "distribution": "ggx"
+  },
+
+  "steel": {
+    "type": "roughconductor",
+    "eta": 2.9304,
+    "k": 2.9996,
+    "distribution": "ggx"
+  },
+
+  "tungstene": {
+    "type": "roughconductor",
+    "material": "W",
+    "distribution": "ggx"
+  },
+
+  "silver": {
+    "type": "roughconductor",
+    "material": "Ag",
+    "distribution": "ggx"
+  },
+
+  "nickel": {
+    "type": "roughconductor",
+    "material": "Ni_palik",
+    "distribution": "ggx"
+  },
+
+  "brass": {
+    "type": "roughconductor",
+    "eta": {
+      "type": "spectrum",
+      "filename": "3D/materials/Cu70Zn30.eta.spd"
+    },
+    "k": {
+      "type": "spectrum",
+      "filename": "3D/materials/Cu70Zn30.k.spd"
+    },
+    "distribution": "ggx"
+  },
+
+  "copper": {
+    "type": "roughconductor",
+    "material": "Cu_palik",
+    "distribution": "ggx"
+  },
+
+  "smooth_plastic": {
+    "type": "plastic",
+    "diffuse_reflectance": {
+      "type": "rgb",
+      "value": [0.0, 0.0, 0.0]
+    },
+    "int_ior": 1.9
+  },
+  "rubber": {
+    "type": "roughplastic",
+    "distribution": "beckmann",
+    "int_ior": 1.61,
+    "diffuse_reflectance": {
+      "type": "rgb",
+      "value": 0
+    }
+  },
+  "uv_check": {
+    "type": "diffuse",
+    "reflectance": {
+      "type": "bitmap",
+      "filename": "3D/Darts/textures/uv_check.jpg"
+    }
+  }
+}
