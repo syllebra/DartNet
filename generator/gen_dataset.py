@@ -99,10 +99,10 @@ if __name__ == "__main__":
     #print(get_variations_around_random_axis(3,amplitudes=[5,3,180]))
     #test_func(get_rnd_x_axis)
 
-    tips_list = get_dir_list("tmp/TIPS",['obj'],False, False)
-    barrels_list = get_dir_list("tmp/BARRELS",['obj'],False, False)
-    shafts_list = get_dir_list("tmp/SHAFTS",['obj'],False, False)
-    flights_list = get_dir_list("tmp/FLIGHTS",['obj'],False, False)
+    tips_list = get_dir_list("3D/Darts/_gen/TIPS",['obj'],False, False)
+    barrels_list = get_dir_list("3D/Darts/_gen/BARRELS",['obj'],False, False)
+    shafts_list = get_dir_list("3D/Darts/_gen/SHAFTS",['obj'],False, False)
+    flights_list = get_dir_list("3D/Darts/_gen/FLIGHTS",['obj'],False, False)
     boards_list = get_dir_list("3D/Boards/")
     hdri_list =  get_dir_list("3D/hdri/",['hdr','exr'])
 

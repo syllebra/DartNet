@@ -8,7 +8,7 @@ mi.set_variant("cuda_ad_rgb")
 #mi.set_variant('scalar_rgb')
 
 darts_metadata = {}
-with open("./tmp/metadata.json","r") as f:
+with open("./3D/Darts/_gen/metadata.json","r") as f:
     darts_metadata = json.load(f)
 
 with open('3D/materials.json','r') as f:
@@ -47,14 +47,14 @@ def make_dart_def(tip="A", tip_mat="iron", tip_length = 0.036,
 
     y = 0
     dart_def = {"type": "shapegroup"}
-    dart_def["tip"] = _obj_def(f"tmp/TIPS/{tip}.obj", mat_ref = tip_mat)
+    dart_def["tip"] = _obj_def(f"3D/Darts/_gen/TIPS/{tip}.obj", mat_ref = tip_mat)
     y += tip_length#darts_metadata[f"{tip}.obj"]["max"][1]
-    dart_def["barrel"] = _obj_def(f"tmp/BARRELS/{barrel}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = barrel_mat)
+    dart_def["barrel"] = _obj_def(f"3D/Darts/_gen/BARRELS/{barrel}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = barrel_mat)
     y += darts_metadata[f"{barrel}.obj"]["max"][1]
-    dart_def["shaft"] = _obj_def(f"tmp/SHAFTS/{shaft}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = shaft_mat)
+    dart_def["shaft"] = _obj_def(f"3D/Darts/_gen/SHAFTS/{shaft}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = shaft_mat)
     y += darts_metadata[f"{shaft}.obj"]["max"][1] - flight_in
-    dart_def["flightA"] = _obj_def(f"tmp/FLIGHTS/{flight}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = "flights_mat")
-    dart_def["flightB"] = _obj_def(f"tmp/FLIGHTS/{flight}.obj", tr=mi.ScalarTransform4f.rotate([0,1,0],90).translate([0.0,y,0]), mat_ref = "flights_mat")
+    dart_def["flightA"] = _obj_def(f"3D/Darts/_gen/FLIGHTS/{flight}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = "flights_mat")
+    dart_def["flightB"] = _obj_def(f"3D/Darts/_gen/FLIGHTS/{flight}.obj", tr=mi.ScalarTransform4f.rotate([0,1,0],90).translate([0.0,y,0]), mat_ref = "flights_mat")
     
     if(materials is not None):
         shaft_mat_def = materials[shaft_mat].copy()

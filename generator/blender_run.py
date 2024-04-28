@@ -147,7 +147,7 @@ if __name__ == "__main__":
     metadata = {}
 
     for col in ["FLIGHTS","BARRELS","TIPS","SHAFTS"]:
-        dir = f"./tmp/{col}/"
+        dir = f"./3D/Darts/_gen/{col}/"
         func = edit_flight_obj if col == "FLIGHTS" else edit_lathe_obj
         files = [os.path.join(dir,f) for f in os.listdir(dir) if os.path.isfile(os.path.join(dir,f))]
         for f in files:
@@ -155,5 +155,5 @@ if __name__ == "__main__":
             name = os.path.basename(f)
             metadata[name] = {"min":list(mini), "max":list(maxi)}
     
-    with(open("./tmp/metadata.json","w") as f):
+    with(open("./3D/Darts/_gen/metadata.json","w") as f):
         json.dump(metadata,f, indent=4)

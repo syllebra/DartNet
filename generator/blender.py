@@ -13,7 +13,7 @@ collection_names = ["FLIGHTS","BARRELS","TIPS","SHAFTS"]
 collections = bpy.data.collections if not collection_names else [col for col in bpy.data.collections if col.name in collection_names]
 
 for col in collections:
-    os.makedirs(f"./tmp/{col.name}", exist_ok=True)
+    os.makedirs(f"./3D/Darts/_gen/{col.name}", exist_ok=True)
     for obj in col.all_objects:
         if("_REF" in obj.name):
             continue
@@ -27,7 +27,7 @@ for col in collections:
 
         bpy.context.view_layer.objects.active = obj
         bpy.ops.wm.obj_export(
-            filepath=f"./tmp/{col.name}/{obj.name}.obj",
+            filepath=f"./3D/Darts/_gen/{col.name}/{obj.name}.obj",
             check_existing=False,
             filter_blender=False,
             filter_backup=False,
