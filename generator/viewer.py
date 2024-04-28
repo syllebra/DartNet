@@ -63,6 +63,28 @@ class Application(SimpleViewer):
        
         self.kp_size=30
 
+        self.popup_menu = tk.Menu(self, tearoff=0)
+        self.popup_menu.add_command(label="Add dart marker",
+                                    command=self.add_dart_marker)
+
+        self.master.bind("<Button-3>", self.popup) # Button-2 on Aqua
+        self.popup_pos = [0,0]
+
+    def popup(self, event):
+        try:
+            self.popup_menu.tk_popup(event.x_root, event.y_root, 0)
+            self.popup_pos = [event.x, event.y]
+        finally:
+            self.popup_menu.grab_release()
+
+    def add_dart_marker(self):
+        i = 1
+        while f"dart{i}" in self.metadata["kc"]:
+            i+=1
+        p = self.to_image_point(x=self.popup_pos[0],y=self.popup_pos[1])
+        self.metadata["kc"][f"dart{i}" ]=p
+        self.redraw_image()
+
     def menu_save_clicked(self, event=None):
         metadata_filepath = os.path.splitext(self.filename)[0]+".json"
         print(self.metadata)
@@ -314,7 +336,8 @@ class Application(SimpleViewer):
 
         for k, pti in self.metadata["kc"].items():
             pt = self.from_image_point(x=pti[0], y=pti[1])
-            draw_pt(pt, colors[k], self._drag_data["item"] == k)
+            pt_col = colors.get(k,"cyan")
+            draw_pt(pt, pt_col, self._drag_data["item"] == k)
             
         if(len(scores)>0):
             for i,k in enumerate(self.metadata["kc"].keys()):
@@ -322,7 +345,8 @@ class Application(SimpleViewer):
                         pt = self.metadata["kc"][k]
                         score = scores[i-4]
                         ptc = self.from_image_point(pt[0], pt[1])
-                        self.canvas.create_text(ptc[0]+35,ptc[1], text= score, fill = colors[k], font=self.font)
+                        pt_col = colors.get(k,"cyan")
+                        self.canvas.create_text(ptc[0]+35,ptc[1], text= score, fill = pt_col, font=self.font)
                         #print(scores)
 
 
