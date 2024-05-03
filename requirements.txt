@@ -1,3 +1,4 @@
+ultralytics>=8.1.45
 matplotlib>=3.8.4
 mitsuba>=3.5.0
 numpy>=1.26.4
