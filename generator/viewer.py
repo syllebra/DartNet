@@ -9,27 +9,10 @@ import json
 import cv2
 
 from simple_viewer import SimpleViewer
-from annotate import get_dart_scores
+from annotate import get_dart_scores, seg_intersect
 
 colors = {"cal1":"gold","cal2":"hotpink","cal3":"lightgreen","cal4":"salmon", "test":"white", "dart0":"cyan", "dart1":"cyan", "dart2":"cyan"}
 
-
-# line segment a given by endpoints a1, a2
-# line segment b given by endpoints b1, b2
-# return 
-def seg_intersect(a1,a2, b1,b2) :
-    def perp( a ) :
-        b = np.empty_like(a)
-        b[0] = -a[1]
-        b[1] = a[0]
-        return b                
-    da = a2-a1
-    db = b2-b1
-    dp = a1-b1
-    dap = perp(da)
-    denom = np.dot( dap, db)
-    num = np.dot( dap, dp )
-    return (num / denom.astype(float))*db + b1
 
 
 class Application(SimpleViewer):
@@ -51,9 +34,9 @@ class Application(SimpleViewer):
                         "board":{
                 "r_board": 0.2255,  # radius of full board
                 "r_double": 0.170,  # center bull to outside double wire edge, in m (BDO standard)
-                "r_treble": 0.1074,  # center bull to outside treble wire edge, in m (BDO standard)
-                "r_outer_bull": 0.0159,
-                "r_inner_bull": 0.00635,
+                "r_treble": 0.1064,  # center bull to outside treble wire edge, in m (BDO standard)
+                "r_outer_bull": 0.0174,
+                "r_inner_bull": 0.007,
                 "w_double_treble": 0.01,  # wire apex to apex for double and treble
                 "width": 0,
                 "height": 0
@@ -295,6 +278,12 @@ class Application(SimpleViewer):
             if(border):
                 self.canvas.create_rectangle(xmin,ymin, xmax, ymax, outline= "yellow" if dragged else col, width=3)
 
+        def draw_poly(poly, col="white"):
+            last = poly[-1]
+            for p in poly:
+                self.canvas.create_line(last[0],last[1], p[0], p[1], fill=col, width=3)
+                last = p
+
         scores = self.compute_scores()
 
         xy_cal =  np.array([p for k,p in self.metadata["kc"].items( )if k in ["cal1","cal2","cal3","cal4"] ] )
@@ -338,7 +327,19 @@ class Application(SimpleViewer):
             pt = self.from_image_point(x=pti[0], y=pti[1])
             pt_col = colors.get(k,"cyan")
             draw_pt(pt, pt_col, self._drag_data["item"] == k)
-            
+        
+        if("bbox" in self.metadata):
+            for k, box in self.metadata["bbox"].items():
+                bx = [
+                    [box[0][0],box[0][1]],
+                    [box[0][0],box[1][1]],
+                    [box[1][0],box[1][1]],
+                    [box[1][0],box[0][1]]
+                ]
+                pts = [self.from_image_point(x=pti[0], y=pti[1]) for pti in bx]
+                pt_col = colors.get(k,"cyan")
+                draw_poly(pts, pt_col)#, self._drag_data["item"] == k)
+
         if(len(scores)>0):
             for i,k in enumerate(self.metadata["kc"].keys()):
                 if(i>3):

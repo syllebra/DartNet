@@ -68,3 +68,21 @@ def get_dart_scores(xy_transformed, cfg, numeric=False):
                 else:
                     scores[i] = int(s)
     return scores
+
+
+# line segment a given by endpoints a1, a2
+# line segment b given by endpoints b1, b2
+# return 
+def seg_intersect(a1,a2, b1,b2) :
+    def perp( a ) :
+        b = np.empty_like(a)
+        b[0] = -a[1]
+        b[1] = a[0]
+        return b                
+    da = a2-a1
+    db = b2-b1
+    dp = a1-b1
+    dap = perp(da)
+    denom = np.dot( dap, db)
+    num = np.dot( dap, dp )
+    return (num / denom.astype(float))*db + b1

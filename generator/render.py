@@ -14,6 +14,27 @@ with open("./3D/Darts/_gen/metadata.json","r") as f:
 with open('3D/materials.json','r') as f:
     materials = json.load(f)
 
+def extend(box, pts, offset = [0,0,0], dim = 3):
+    ret = box.copy()
+    if(isinstance(pts, dict)):
+        pts = [
+            [pts["min"][0],pts["min"][1],pts["min"][2]],
+            [pts["max"][0],pts["max"][1],pts["max"][2]]
+        ]
+    for p in pts:
+        for i in range(dim):
+            if(p[i]+offset[i]<ret[0][i]):
+                ret[0][i] = p[i]+offset[i]
+            if(p[i]+offset[i]>ret[1][i]):
+                ret[1][i] = p[i]+offset[i]
+    return ret
+
+# pts = [[212.27035522460938, 188.92881774902344], [210.12791442871094, 182.35865783691406], [244.969970703125, 175.47854614257812], [243.37466430664062, 322.0582580566406], [277.7437744140625, 312.6079406738281]]
+# bbox = [pts[0].copy(),pts[0].copy()]
+# bbox = extend(bbox,pts[1:], dim=2)
+# print(bbox)
+# exit(0)
+
 
 def info(object, spacing=10, collapse=1):
     """Print methods and doc strings.
@@ -45,16 +66,27 @@ def make_dart_def(tip="A", tip_mat="iron", tip_length = 0.036,
             ret["to_world"] = tr
         return ret
 
+    box = np.zeros((2,3))
     y = 0
     dart_def = {"type": "shapegroup"}
     dart_def["tip"] = _obj_def(f"3D/Darts/_gen/TIPS/{tip}.obj", mat_ref = tip_mat)
+    box = extend(box, darts_metadata[f"{tip}.obj"])
     y += tip_length#darts_metadata[f"{tip}.obj"]["max"][1]
     dart_def["barrel"] = _obj_def(f"3D/Darts/_gen/BARRELS/{barrel}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = barrel_mat)
+    box = extend(box, darts_metadata[f"{barrel}.obj"],[0,y,0])
     y += darts_metadata[f"{barrel}.obj"]["max"][1]
     dart_def["shaft"] = _obj_def(f"3D/Darts/_gen/SHAFTS/{shaft}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = shaft_mat)
     y += darts_metadata[f"{shaft}.obj"]["max"][1] - flight_in
+    box = extend(box, darts_metadata[f"{shaft}.obj"],[0,y,0])
     dart_def["flightA"] = _obj_def(f"3D/Darts/_gen/FLIGHTS/{flight}.obj", tr=mi.ScalarTransform4f.translate([0.0,y,0]), mat_ref = "flights_mat")
     dart_def["flightB"] = _obj_def(f"3D/Darts/_gen/FLIGHTS/{flight}.obj", tr=mi.ScalarTransform4f.rotate([0,1,0],90).translate([0.0,y,0]), mat_ref = "flights_mat")
+    flbx = [
+        [darts_metadata[f"{flight}.obj"]["min"][i] for i in range(3)],
+        [darts_metadata[f"{flight}.obj"]["max"][i] for i in range(3)]
+    ]
+    flbx[0][2] = flbx[0][0]
+    flbx[1][2] = flbx[1][0]
+    #box = extend(box, flbx,[0,y,0])
     
     if(materials is not None):
         shaft_mat_def = materials[shaft_mat].copy()
@@ -80,7 +112,7 @@ def make_dart_def(tip="A", tip_mat="iron", tip_length = 0.036,
 
     #dart_def["barrel"]["material"]={"type":"ref", "id":"uv_check"}
 
-    return dart_def
+    return dart_def, box
 
 def make_lights_def(hdri_file = '3D/hdri/kiara_interior_1k.hdr', hdri_rotation = 0, scale=1.0,**params):
     return {
@@ -195,7 +227,7 @@ def render(render_size = 800, spp=35, **params ):
     board_thickness = params["board_def"].get("board_thickness",0.0381)
     board_def, board_metadata = make_board_def(**params["board_def"])
 
-    scene_base["dart"] = make_dart_def(**params["dart_def"])
+    scene_base["dart"], dart_bbox = make_dart_def(**params["dart_def"])
         # tip="A",barrel="03", shaft="78281", flight="standard", tip_mat="iron", barrel_mat="brass",
         #                                grip_normal_path='3D/Darts/textures/grip/grip_01_nm.png',
         #                                shaft_mat="aluminium", shaft_color=[0.0,0,1.0],
@@ -259,6 +291,29 @@ def render(render_size = 800, spp=35, **params ):
                 to_backproj.append(None)
         return backproject(to_backproj, sensor)
     
+    def backproject_darts_bbox(bbox, trs, sensor):
+        r = 1
+        pts = [
+            #[0,bbox[0][1],0], #tip
+            [bbox[0][0]*r,bbox[0][1],bbox[0][2]*r],
+            [bbox[1][0]*r,bbox[0][1],bbox[0][2]*r],
+            [bbox[0][0]*r,bbox[0][1],bbox[1][2]*r],
+            [bbox[1][0]*r,bbox[0][1],bbox[1][2]*r],
+            [bbox[0][0]*r,bbox[1][1],bbox[0][2]*r],
+            [bbox[1][0]*r,bbox[1][1],bbox[0][2]*r],
+            [bbox[0][0]*r,bbox[1][1],bbox[1][2]*r],
+            [bbox[1][0]*r,bbox[1][1],bbox[1][2]*r],
+        ]
+
+        ret = []
+        for tr in trs:
+            wpts = [tr @ p for p in pts]
+            img_pts = backproject(wpts,sensor)
+            bb  = [img_pts[0].copy(),img_pts[0].copy()]
+            bb = extend(bb, img_pts[1:],[0,0], 2)
+            ret.append(bb)
+        return ret
+
     sensors_rot = params["sensors_def"].get("rotations",[[0,0]])
     factors = params["sensors_def"].get("distance_factors",[1.1]*len(sensors_rot))
 
@@ -266,15 +321,24 @@ def render(render_size = 800, spp=35, **params ):
 
     projs_cal = [backproject_uvs([p for k,p in board_metadata["kc"].items() if k in ["cal1","cal2","cal3","cal4"]], sensor=s) for s in sensors]
     projs_darts = [backproject(darts_pos, sensor=s) for s in sensors]
+
+
+    # dimensions: (sensor,bbox_id,min/max,pts)
+    projs_darts_bbox = [backproject_darts_bbox(dart_bbox, [d["to_world"] for d in darts.values()], sensor=s) for s in sensors]
+
     # params = mi.traverse(scene)
+    # vpos = params["dart.barrel.vertex_positions"].numpy()
+    # vpos = vpos.reshape((vpos.shape[0]//3,3))
+    # print(np.min(vpos,axis=0))
+    # print(np.max(vpos,axis=0))
     # params.update()
     
     images = [mi.render(scene, spp=spp, sensor=s) for s in sensors]
 
-    return images, projs_cal, projs_darts, board_metadata
+    return images, projs_cal, projs_darts, projs_darts_bbox, board_metadata
 
 def render_and_save(out_dir="_GENERATED", render_size = 800, spp=35, **params):
-    images, projs_cals, projs_darts, board_metadata = render(render_size=render_size, spp=spp, **params)
+    images, projs_cals, projs_darts, projs_darts_bbox, board_metadata = render(render_size=render_size, spp=spp, **params)
     os.makedirs(out_dir,exist_ok=True)
 
     base_file = params.get("base_name","tmp")
@@ -288,11 +352,13 @@ def render_and_save(out_dir="_GENERATED", render_size = 800, spp=35, **params):
         #img = (np.clip(image.numpy()** (1.0 / 2.2),0,1.0)* 255).astype('uint8')
         mi.Bitmap(image).convert(pixel_format=mi.Bitmap.PixelFormat.RGB, component_format=mi.Struct.Type.UInt8, srgb_gamma=True).write(img_save_path)
 
-        md = {"kc":{},"board_file":board_metadata["board"]["file"]}
+        md = {"kc":{}, "bbox":{},"board_file":board_metadata["board"]["file"]}
         for i,k in enumerate(["cal1","cal2","cal3","cal4"]):
             md["kc"][k] = projs_cals[ii][i]
         for i in range(len(projs_darts[ii])):
             md["kc"][f"dart{i}"] = projs_darts[ii][i]            
+        for i in range(len(projs_darts_bbox[ii])):
+            md["bbox"][f"dart{i}"] = projs_darts_bbox[ii][i]
 
         data_save_path = f"{os.path.splitext(img_save_path)[0]}.json"
         with open(data_save_path, "w") as f:
@@ -324,7 +390,7 @@ if __name__ == "__main__":
                   }
     params["lights_def"] = {"hdri_file": '3D/hdri/pump_house_1k.hdr', "hdri_rotation" : 50, "scale":0.95 }
     params["board_def"] = {"board_image_path":'3D/Boards/target_wc.jpg', "board_thickness" : 0.0381}
-    params["sensors_def"] = {"rotations":[[-5,-20]], "fov":37.4, "distance_factors": [2.2,1.0,0.9]}
+    params["sensors_def"] = {"rotations":[[-5,-20]], "fov":37.4, "distance_factors": [1.2,1.0,0.9]}
     
     params["darts"] = {
             "dart1": {"x":-0.028,"y":0.06, "x_angle":10.0, "y_angle":0.5, "roll_angle":10.6, "penetration": 0.015},
@@ -334,7 +400,7 @@ if __name__ == "__main__":
 
     hash = hashlib.sha256(json.dumps(params, sort_keys=True).encode('utf-8')).hexdigest()
 
-    render_and_save(render_size=1920, spp=256, out_dir=".", base_name="render", **params)
+    render_and_save(render_size=480, spp=32, out_dir=".", base_name="render", **params)
     debug_file(file=r"./render_0.jpg")
 
 
