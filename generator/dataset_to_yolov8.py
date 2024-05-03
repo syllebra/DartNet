@@ -64,7 +64,7 @@ def translate_annotations(directory, width=None, height=None):
         pdata = str(p).replace(f"images{os.sep}",f"labels{os.sep}").replace(".json", ".txt")
         os.makedirs(os.path.dirname(pdata), exist_ok=True)
         
-        sz = 12 / 480
+        sz = 17 / 480
         with open(pdata,"w") as outfile:
             for k,v in data["kc"].items():
                 if("dart" in k.lower()):
@@ -72,6 +72,15 @@ def translate_annotations(directory, width=None, height=None):
                 elif ("cal" in k.lower()):
                     cl = int(k.replace("cal","").strip())
                 outfile.write(f"{cl} {v[0]/width} {v[1]/height} {sz} {sz}\n")
+            for k,v in data["bbox"].items():
+                if("dart" in k.lower()):
+                    cl = 5
+                x = (v[0][0]+v[1][0])*0.5
+                y = (v[0][1]+v[1][1])*0.5
+                w = abs(v[1][0]-v[0][0])
+                h = abs(v[1][1]-v[0][1])
+
+                outfile.write(f"{cl} {x/width} {y/height} {w/width} {h/height}\n")
 
 if __name__ == "__main__":
     directory = "_GENERATED"
@@ -88,11 +97,12 @@ if __name__ == "__main__":
 
         outfile.write(f"\n# Classes\n")
         outfile.write(f"names:\n")
-        outfile.write(f" 0: dart\n")
+        outfile.write(f" 0: tip\n")
         outfile.write(f" 1: cal1\n")
         outfile.write(f" 2: cal2\n")
         outfile.write(f" 3: cal3\n")
         outfile.write(f" 4: cal4\n")
+        outfile.write(f" 5: dart\n")
 
 
     
