@@ -5,6 +5,7 @@ import shutil
 from tqdm import tqdm
 import pathlib
 import json
+import numpy as np
 
 def get_data_file(image_file):
     file= os.path.splitext(image_file)[0]+".json"
@@ -71,10 +72,20 @@ def translate_annotations(directory, width=None, height=None):
                     cl = 0
                 elif ("cal" in k.lower()):
                     cl = int(k.replace("cal","").strip())
-                outfile.write(f"{cl} {v[0]/width} {v[1]/height} {sz} {sz}\n")
+
+                if(v[0]>=0 and v[0]<width and v[1]>0 and v[1]<height):
+                    outfile.write(f"{cl} {v[0]/width} {v[1]/height} {sz} {sz}\n")
             for k,v in data["bbox"].items():
                 if("dart" in k.lower()):
                     cl = 5
+
+                if(v[0][0] <0 and v[1][0] <0): continue
+                if(v[0][0] >=width and v[1][0] >=width): continue
+                if(v[0][1] <0 and v[1][1] <0): continue
+                if(v[0][1] >=height and v[1][1] >=height): continue
+
+                v[0] = np.clip(np.array(v[0]),(0,0),(width-1),(height-1))
+                v[1] = np.clip(np.array(v[1]),(0,0),(width-1),(height-1))
                 x = (v[0][0]+v[1][0])*0.5
                 y = (v[0][1]+v[1][1])*0.5
                 w = abs(v[1][0]-v[0][0])
