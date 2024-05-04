@@ -164,7 +164,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Generate a realistic random darts dataset.')
     parser.add_argument('number', metavar='N', type=int, help='number of samples to be generated')
-    parser.add_argument("-s",'--render_size', type=int, default=800, help="Render size is sxs")
+    parser.add_argument("-s",'--render_size', type=int, default=640, help="Render size is sxs")
     parser.add_argument("-v",'--view_points', type=int, default=3, help="Number of view points renders for each sample")
     parser.add_argument("-q",'--quality', type=int, default=35, help="Number of sample per rays")
     parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destinataion directory")

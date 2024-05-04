@@ -83,7 +83,16 @@ def translate_annotations(directory, width=None, height=None):
                 outfile.write(f"{cl} {x/width} {y/height} {w/width} {h/height}\n")
 
 if __name__ == "__main__":
-    directory = "_GENERATED"
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Generate a realistic random darts dataset.')
+    parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destinataion directory")
+    
+    args = parser.parse_args()
+    print(args)
+    
+    directory = args.directory
     validation_ratio = 0.1
     test_ratio = 0.05
     reorganize_images_data(directory,validation_ratio, test_ratio)
