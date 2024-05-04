@@ -84,8 +84,8 @@ def translate_annotations(directory, width=None, height=None):
                 if(v[0][1] <0 and v[1][1] <0): continue
                 if(v[0][1] >=height and v[1][1] >=height): continue
 
-                v[0] = np.clip(np.array(v[0]),(0,0),(width-1),(height-1))
-                v[1] = np.clip(np.array(v[1]),(0,0),(width-1),(height-1))
+                v[0] = np.clip(np.array(v[0]),(0,0),(width-1,height-1))
+                v[1] = np.clip(np.array(v[1]),(0,0),(width-1,height-1))
                 x = (v[0][0]+v[1][0])*0.5
                 y = (v[0][1]+v[1][1])*0.5
                 w = abs(v[1][0]-v[0][0])
