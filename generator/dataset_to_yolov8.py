@@ -59,6 +59,9 @@ def translate_annotations(directory, width=None, height=None):
         if((width == None or height==None) and os.path.isfile(imgp)):
             width, height = get_image_size(imgp)
 
+        if((width == None or height==None)):
+            continue
+        
         with open(p,"r") as file:
             data = json.load(file)
 
