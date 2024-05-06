@@ -172,4 +172,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
+    from mitsuba import Thread, LogLevel
+    Thread.thread().logger().set_log_level(LogLevel.Error)
+
     render_random(render_size=args.render_size,spp=args.quality,sensors_num=args.view_points, out_dir=args.directory, total=args.number)
