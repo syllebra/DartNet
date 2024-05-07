@@ -4,7 +4,6 @@ import argparse
 import math
 import numpy as np
 from scipy import ndimage
-from matplotlib import pyplot
 from PIL import Image, ImageOps
 import os
 import multiprocessing as mp
@@ -154,7 +153,7 @@ def CleanupAO(path:str):
 def Convert(input_file,dest_file,smoothness,intensity):
 
     import cv2
-    im = pyplot.imread(input_file)
+    im = cv2.imread(input_file)
 
     if im.ndim == 3:
         im_grey = np.zeros((im.shape[0],im.shape[1])).astype(float)
