@@ -15,7 +15,7 @@ def convert(src_dir="datasets/deepdarts", out_dir="_GENERATED", sz=640):
     src_dir = f"{src_dir}/cropped_images/800"
 
     cols = [(0,215,255),(180, 105, 255),(112,255,202),(114,128,250)]
-    for num,d in tqdm(enumerate(df.iterrows())):
+    for num,d in tqdm(enumerate(df.iterrows()), total=len(df)):
         img_path = os.path.join(src_dir,d[1]["img_folder"],d[1]["img_name"])
         if(os.path.exists(img_path)):
             im = cv2.imread(img_path)
