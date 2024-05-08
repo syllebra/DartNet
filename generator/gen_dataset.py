@@ -85,6 +85,7 @@ def get_dir_list(relevant_path, included_extensions = ['jpg','jpeg', 'bmp', 'png
         file_names = [os.path.splitext(f)[0] for f in file_names]
     return file_names
 
+
 def test_func(func):
     s = [func() for _ in range(300000)]
     import matplotlib.pyplot as plt
@@ -93,73 +94,79 @@ def test_func(func):
     plt.show()
 
 
+tips_list = get_dir_list("3D/Darts/_gen/TIPS",['obj'],False, False)
+barrels_list = get_dir_list("3D/Darts/_gen/BARRELS",['obj'],False, False)
+shafts_list = get_dir_list("3D/Darts/_gen/SHAFTS",['obj'],False, False)
+flights_list = get_dir_list("3D/Darts/_gen/FLIGHTS",['obj'],False, False)
+boards_list = get_dir_list("3D/Boards/")
+hdri_list =  get_dir_list("3D/hdri/",['hdr','exr'])
+
+flights_flags_textures_list =  get_dir_list("3D/Flights/country-flags/png100px/")
+flights_arts_textures_list =  get_dir_list("3D/Flights/arts/")
+
+def get_random_coherent_shaft_cols_and_texture():
+    flight_texture_file = choice(flights_arts_textures_list if random.random()>0.3 else flights_flags_textures_list)
+    shaft_col = [0,0,0]
+    if(random.random()>0.2):
+        try:
+            shaft_col = np.array(get_dominant_colors(flight_texture_file,10)[0])/255.0
+        except Exception as e:
+            pass
+    return flight_texture_file, shaft_col
+
+def get_random_darts(num=3, spread=None):
+    angles = get_variations_around_random_axis(num,amplitudes=[5,3,180])
+    a = np.random.uniform(0,2*np.pi,num)
+    r = (np.random.uniform(0,0.22,num) ** 0.5) * 0.5
+    x = np.cos(a) * r
+    y = np.sin(a) * r
+
+    if(spread != None):
+        x[1:] = np.random.uniform(x[0]-spread,x[0]+spread,num-1)
+        y[1:] = np.random.uniform(y[0]-spread,y[0]+spread,num-1)
+
+    ret = {f"dart{i}": {"x":x[i],"y":y[i], "x_angle":angles[i][0], "y_angle":angles[i][1], "roll_angle":angles[i][2], "penetration": np.random.uniform(0.005,0.018)} for i in range(num)}
+    return ret
+
+def get_random_scene_def(sensors_num=1):
+    flight_texture_file, shaft_col = get_random_coherent_shaft_cols_and_texture ()
+
+    params = {}#"render_size":480, "spp":35}
+    params["dart_def"] = {
+                    "tip":choice(tips_list), "tip_mat":"iron", "tip_length" : np.random.uniform(0.032,0.041),
+                    "barrel" : choice(barrels_list), "barrel_mat":choice(["brass","tungstene","aluminium"],[0.3,0.65,0.05]), "grip_normal_path":None, 
+                    "shaft":choice(shafts_list), "shaft_mat" : "smooth_plastic", "shaft_color" : shaft_col,#[0,0.0,0.5],
+                    "flight":choice(flights_list, {"standard":0.5}), "flight_in" : 0.01,"flight_texture_file" : flight_texture_file,
+                }
+    params["lights_def"] = {"hdri_file": choice(hdri_list), "hdri_rotation" : np.random.uniform(-50,50), "scale":np.random.uniform(1,1.3) }
+    params["board_def"] = {"board_image_path":choice(boards_list,{"canaveral":0.4}), "board_thickness" : 0.0381}
+    
+    params["sensors_def"] = {"rotations":get_random_sensors_rotations(sensors_num), "fov":37.4, "distance_factors": np.random.uniform(0.9,1.3,sensors_num)}
+    
+
+    
+    params["darts"] = get_random_darts(choice([1,2,3],[0.2,0.3,0.5]), spread=0.02 if random.random()<0.5 else None)
+
+    # params["darts"] = {
+    #         "dart1": {"x":0.0,"y":0.0, "x_angle":10.0, "y_angle":0.5, "roll_angle":10.6, "penetration": 0.013},
+    #         "dart2": {"x":0.07,"y":0.1, "x_angle":12.0, "y_angle":-0.5, "roll_angle":60.6, "penetration": 0.013}
+    #     }
+    return params
+
+def render_random(render_size=480, spp=35, out_dir="_GENERATED", total=60, sensors_num = 1):
+    for i in tqdm(range(total//sensors_num)):
+        params = get_random_scene_def(sensors_num)
+        hash = hashlib.sha256(json.dumps(params, sort_keys=True,default=lambda e : str(e)).encode('utf-8')).hexdigest()
+
+        render_and_save(render_size=render_size, spp=spp, out_dir=out_dir, base_name=hash, **params)
+
 
 if __name__ == "__main__":
-    import sys
-    #print(get_variations_around_random_axis(3,amplitudes=[5,3,180]))
-    #test_func(get_rnd_x_axis)
-
-    tips_list = get_dir_list("3D/Darts/_gen/TIPS",['obj'],False, False)
-    barrels_list = get_dir_list("3D/Darts/_gen/BARRELS",['obj'],False, False)
-    shafts_list = get_dir_list("3D/Darts/_gen/SHAFTS",['obj'],False, False)
-    flights_list = get_dir_list("3D/Darts/_gen/FLIGHTS",['obj'],False, False)
-    boards_list = get_dir_list("3D/Boards/")
-    hdri_list =  get_dir_list("3D/hdri/",['hdr','exr'])
 
 
-
-    flights_flags_textures_list =  get_dir_list("3D/Flights/country-flags/png100px/")
-    flights_arts_textures_list =  get_dir_list("3D/Flights/arts/")
-
-    def get_random_coherent_shaft_cols_and_texture():
-        flight_texture_file = choice(flights_arts_textures_list if random.random()>0.3 else flights_flags_textures_list)
-        shaft_col = [0,0,0]
-        if(random.random()>0.2):
-            try:
-                shaft_col = np.array(get_dominant_colors(flight_texture_file,10)[0])/255.0
-            except Exception as e:
-                pass
-        return flight_texture_file, shaft_col
-
-    def render_random(render_size=480, spp=35, out_dir="_GENERATED", total=60, sensors_num = 1):
-        for i in tqdm(range(total//sensors_num)):
-            flight_texture_file, shaft_col = get_random_coherent_shaft_cols_and_texture ()
-
-            params = {}#"render_size":480, "spp":35}
-            params["dart_def"] = {
-                            "tip":choice(tips_list), "tip_mat":"iron", "tip_length" : np.random.uniform(0.032,0.041),
-                            "barrel" : choice(barrels_list), "barrel_mat":choice(["brass","tungstene","aluminium"],[0.3,0.65,0.05]), "grip_normal_path":None, 
-                            "shaft":choice(shafts_list), "shaft_mat" : "smooth_plastic", "shaft_color" : shaft_col,#[0,0.0,0.5],
-                            "flight":choice(flights_list, {"standard":0.5}), "flight_in" : 0.01,"flight_texture_file" : flight_texture_file,
-                        }
-            params["lights_def"] = {"hdri_file": choice(hdri_list), "hdri_rotation" : np.random.uniform(-50,50), "scale":np.random.uniform(1,1.3) }
-            params["board_def"] = {"board_image_path":choice(boards_list,{"canaveral":0.4}), "board_thickness" : 0.0381}
-            
-            params["sensors_def"] = {"rotations":get_random_sensors_rotations(sensors_num), "fov":37.4, "distance_factors": np.random.uniform(0.9,1.3,sensors_num)}
-            
-            def get_random_darts(num=3, spread=None):
-                angles = get_variations_around_random_axis(num,amplitudes=[5,3,180])
-                r = np.random.uniform(0,2*np.pi,num)
-                d = np.random.uniform(0,0.22,num)
-                x = np.cos(r) * d
-                y = np.sin(r) * d
-                if(spread != None):
-                    x[1:] = np.random.uniform(x[0]-spread,x[0]+spread,num-1)
-
-                ret = {f"dart{i}": {"x":x[i],"y":y[i], "x_angle":angles[i][0], "y_angle":angles[i][1], "roll_angle":angles[i][2], "penetration": np.random.uniform(0.005,0.018)} for i in range(num)}
-                return ret
-            
-            params["darts"] = get_random_darts(choice([1,2,3],[0.2,0.3,0.5]), spread=0.02 if random.random()<0.5 else None)
-
-            # params["darts"] = {
-            #         "dart1": {"x":0.0,"y":0.0, "x_angle":10.0, "y_angle":0.5, "roll_angle":10.6, "penetration": 0.013},
-            #         "dart2": {"x":0.07,"y":0.1, "x_angle":12.0, "y_angle":-0.5, "roll_angle":60.6, "penetration": 0.013}
-            #     }
-
-            hash = hashlib.sha256(json.dumps(params, sort_keys=True,default=lambda e : str(e)).encode('utf-8')).hexdigest()
-
-            render_and_save(render_size=render_size, spp=spp, out_dir=out_dir, base_name=hash, **params)
-
+#print(get_variations_around_random_axis(3,amplitudes=[5,3,180]))
+#test_func(get_rnd_x_axis)
+    
     import argparse
 
     parser = argparse.ArgumentParser(description='Generate a realistic random darts dataset.')
@@ -170,7 +177,6 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destinataion directory")
     
     args = parser.parse_args()
-    print(args)
 
     from mitsuba import Thread, LogLevel
     Thread.thread().logger().set_log_level(LogLevel.Error)
