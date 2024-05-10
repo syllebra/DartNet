@@ -180,9 +180,15 @@ def make_board_def(board_image_path='3D/Boards/unicorn-striker.jpg', board_thick
 def load_sensor(render_size, rotx, roty, board_radius, board_thickness, fov=75.4, distance_factor = 1.2,**params):
         def get_sensor_transform(rotx, roty, fov, radius):
             d =  radius*distance_factor / np.tan(np.deg2rad(fov*0.5))
-            tr = mi.ScalarTransform4f.rotate([1,0,0],rotx).rotate([0,1,0],roty).translate([0,0,d])
+            theta = 2 * np.pi * ((rotx/360)+0.5)
+            phi = np.arccos(1 - 2 * ((roty/140)+0.5))
+            x = np.sin(phi) * np.cos(theta) * d
+            y = np.sin(phi) * np.sin(theta) * d
+            z = np.cos(phi) * d
 
-            return mi.ScalarTransform4f.look_at(origin= tr.translation().numpy()+[0,0,board_thickness], target=[0, 0, board_thickness],  up=[0, 1, 0])
+            tr =  mi.ScalarTransform4f.look_at(origin= [y,z,-x], target=[0, 0, 0],  up=[0, 1, 0])
+            return tr
+
 
         return mi.load_dict(
             

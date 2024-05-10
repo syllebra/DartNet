@@ -143,8 +143,6 @@ def get_random_scene_def(sensors_num=1):
     
     params["sensors_def"] = {"rotations":get_random_sensors_rotations(sensors_num), "fov":37.4, "distance_factors": np.random.uniform(0.9,1.3,sensors_num)}
     
-
-    
     params["darts"] = get_random_darts(choice([1,2,3],[0.2,0.3,0.5]), spread=0.02 if random.random()<0.5 else None)
 
     # params["darts"] = {
