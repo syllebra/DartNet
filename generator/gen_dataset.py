@@ -139,7 +139,7 @@ def get_random_scene_def(sensors_num=1):
                     "flight":choice(flights_list, {"standard":0.5}), "flight_in" : 0.01,"flight_texture_file" : flight_texture_file,
                 }
     params["lights_def"] = {"hdri_file": choice(hdri_list), "hdri_rotation" : np.random.uniform(-50,50), "scale":np.random.uniform(1,1.3) }
-    params["board_def"] = {"board_image_path":choice(boards_list,{"canaveral":0.4}), "board_thickness" : 0.0381}
+    params["board_def"] = {"board_image_path":choice(boards_list,{"canaveral":0.2}), "board_thickness" : 0.0381}
     
     params["sensors_def"] = {"rotations":get_random_sensors_rotations(sensors_num), "fov":37.4, "distance_factors": np.random.uniform(0.9,1.3,sensors_num)}
     
