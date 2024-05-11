@@ -4,10 +4,21 @@ import math
 import numpy as np
 from generator.annotate import seg_intersect
 import time
-
+import os
+import json
+from target_detector import TargetDetector
 # start webcam
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
-cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
+#cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
+cap = cv2.VideoCapture("./datasets/real/vid/output2.mp4")
+
+board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
+with open(board_img_path.replace(".jpg",".json")) as f:
+    board_def = json.load(f)
+
+detector = TargetDetector(board_img_path)
+
+
 # cap.set(3, 640)
 # cap.set(4, 480)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -15,8 +26,8 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
 # model
 
-model = YOLO("best_s.pt")
-#model = YOLO("best_s_tip_boxes640.pt")
+#model = YOLO("best_m.pt")
+model = YOLO("best_n_tip_boxes640.pt")
 model_train_size = 640
 
 # object classes
@@ -25,7 +36,7 @@ pts_cal_dst = None
 crop = None
 
 # create a CLAHE object (Arguments are optional).
-clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
 
 
 def find_cal_pts(res, confidence_min = 0.5):
@@ -58,7 +69,7 @@ def find_cal_pts(res, confidence_min = 0.5):
 def infer(img, mod = None):
     if(mod is None):
         mod = model
-    results = mod(img, stream=True, max_det=10, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=4)
+    results = mod(img, stream=True, max_det=10, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=14)
 
     res = []
     for r in results:
@@ -76,8 +87,11 @@ def infer(img, mod = None):
 t = time.time()
 last = None
 last_diff = None
+time_mult=0#0.0001
+fps = 21.0
 while True:
-    cap.set(cv2.CAP_PROP_POS_MSEC, (time.time()-t)*1000.0)
+    if(time_mult > 0):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, (time.time()-t)*fps*time_mult)
     success, img = cap.read()
     ratio = None
     cropped = False
@@ -95,8 +109,20 @@ while True:
     res = infer(img)
 
     pts_cal = find_cal_pts(res)
-    # if(pts_cal is None):
-    #     continue
+    if(pts_cal is None):
+        M = detector.match(img)
+        if(M is None):
+            continue
+        xy = np.array([p for k,p in board_def["kc"].items()])
+        xyz = np.concatenate((np.array(xy), np.ones((len(xy), 1))), axis=-1).astype(np.float32)
+        xyz_dst = np.matmul(M, xyz.T).T
+        pts_cal = xyz_dst[:, :2] / xyz_dst[:, 2:]
+
+        for i,p in enumerate(pts_cal):
+            v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':0.95, "cls":i+1}
+            res.append(v)
+        #res[]
+        #pts_cal = self.transform_points(xy, self.M)
 
     if(cropped and pts_cal_dst is None and pts_cal is not None):
         pts_cal_dst = pts_cal.copy()
@@ -196,7 +222,7 @@ while True:
     # res2 = infer(img,model2)
     # draw(img, res2, (0,0,255),filter=[5])
     #img_disp = img.resize((int(height*0.3),int(width*0.3)),refcheck=False)
-    if(width>0 and height>0):
+    if(img is not None and img.shape[0]>0 and img.shape[1]>0):
         cv2.imshow('Webcam', img)
     if cv2.waitKey(1) == ord('q'):
         break
