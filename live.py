@@ -9,10 +9,10 @@ import json
 from target_detector import TargetDetector
 # start webcam
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
-#cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
-cap = cv2.VideoCapture("./datasets/real/vid/output2.mp4")
+cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
+#cap = cv2.VideoCapture("./datasets/real/vid/output2.mp4")
 
-board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
+board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 with open(board_img_path.replace(".jpg",".json")) as f:
     board_def = json.load(f)
 
@@ -27,8 +27,11 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 # model
 
 #model = YOLO("best_m.pt")
-model = YOLO("best_n_tip_boxes640.pt")
+model = YOLO("best_s_tip_boxes640_B.pt")
 model_train_size = 640
+force_opencv_detector = False
+use_clahe = False
+stablize = False
 
 # object classes
 classNames = ["tip", "cal1", "cal2", "cal3", "cal4", "dart"]
@@ -55,21 +58,18 @@ def find_cal_pts(res, confidence_min = 0.5):
 
         # class name
         cls = box["cls"]
-#        print("Class name -->", classNames[cls])
         if(cls>0 and cls<5):
             #if(confidence<pts_cal_conf[cls-1]): continue
             pts_cal_conf[cls-1] = confidence
             pts_cal_found += 1
             pts_cal[cls-1] = np.array([(box["x1"]+box["x2"])*0.5,(box["y1"]+box["y2"])*0.5])
-    # print(pts_cal_found)
-    # print(pts_cal_conf)
-    # print(pts_cal)
+
     return None if pts_cal_found <4 else pts_cal
 
 def infer(img, mod = None):
     if(mod is None):
         mod = model
-    results = mod(img, stream=True, max_det=10, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=14)
+    results = mod(img, stream=True, max_det=25, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=14)
 
     res = []
     for r in results:
@@ -87,7 +87,7 @@ def infer(img, mod = None):
 t = time.time()
 last = None
 last_diff = None
-time_mult=0#0.0001
+time_mult=1#0#0.0001
 fps = 21.0
 while True:
     if(time_mult > 0):
@@ -100,20 +100,22 @@ while True:
         ratio = model_train_size/np.max(img.shape)
         img= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
         #img = clahe.apply(img)
-        img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
-        img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
-        img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+        if(use_clahe):
+            img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+            img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
+            img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
 
         cropped = True
 
     res = infer(img)
 
     pts_cal = find_cal_pts(res)
-    if(pts_cal is None):
+
+    if(force_opencv_detector or pts_cal is None):
         M = detector.match(img)
         if(M is None):
             continue
-        xy = np.array([p for k,p in board_def["kc"].items()])
+        xy = np.array([board_def["kc"][k] for k in ["cal1","cal2","cal3","cal4"]])
         xyz = np.concatenate((np.array(xy), np.ones((len(xy), 1))), axis=-1).astype(np.float32)
         xyz_dst = np.matmul(M, xyz.T).T
         pts_cal = xyz_dst[:, :2] / xyz_dst[:, 2:]
@@ -127,34 +129,34 @@ while True:
     if(cropped and pts_cal_dst is None and pts_cal is not None):
         pts_cal_dst = pts_cal.copy()
 
-    # if(pts_cal is not None and pts_cal_dst is not None):
-    #     M = cv2.getPerspectiveTransform(pts_cal.astype(np.float32), pts_cal_dst.astype(np.float32))
-    #     im = cv2.warpPerspective(img.copy(), M, (img.shape[1],img.shape[0]))
-    #     print(im.shape)
-    #     cv2.imshow("Mon Image", im)
-    #     img_gray = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY) / 255.0
-    #     if(last is not None):
-    #         diff = abs(img_gray-last)
-    #         #diff = diff *diff
-    #         #diff[diff<0.4]=0
-    #         if(last_diff is not None):
-    #             delta = abs(diff-last_diff)
-    #             b = 50
-    #             delta[:b,:] = 0
-    #             delta[-b:,:] = 0
-    #             delta[:,:b] = 0
-    #             delta[:,-b:] = 0
+    if(stablize and pts_cal is not None and pts_cal_dst is not None):
+        M = cv2.getPerspectiveTransform(pts_cal.astype(np.float32), pts_cal_dst.astype(np.float32))
+        im = cv2.warpPerspective(img.copy(), M, (img.shape[1],img.shape[0]))
+        print(im.shape)
+        cv2.imshow("Mon Image", im)
+        img_gray = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY) / 255.0
+        if(last is not None):
+            diff = abs(img_gray-last)
+            #diff = diff *diff
+            #diff[diff<0.4]=0
+            if(last_diff is not None):
+                delta = abs(diff-last_diff)
+                b = 50
+                delta[:b,:] = 0
+                delta[-b:,:] = 0
+                delta[:,:b] = 0
+                delta[:,-b:] = 0
 
-    #             kernel = np.ones((3,3),np.uint8)
-    #             delta = cv2.erode(delta,kernel,iterations = 1)
-    #             delta = cv2.dilate(delta,kernel,iterations = 10)
-    #             delta = cv2.erode(delta,kernel,iterations = 5)
+                kernel = np.ones((3,3),np.uint8)
+                delta = cv2.erode(delta,kernel,iterations = 1)
+                delta = cv2.dilate(delta,kernel,iterations = 10)
+                delta = cv2.erode(delta,kernel,iterations = 5)
 
-    #             cv2.imshow("delta", (delta>0.35)*1.0)
-    #         last_diff = diff
+                cv2.imshow("delta", (delta>0.35)*1.0)
+            last_diff = diff
             
-    #     else:
-    #         last = img_gray
+        else:
+            last = img_gray
 
 
     
