@@ -1,11 +1,13 @@
 
 import numpy as np
-from render import render_and_save
+from render import render_and_save, render, save_metadata
 import hashlib
 import json
 import random
 import os
 from tqdm import tqdm
+import mitsuba as mi
+import cv2
 
 def get_rnd_x_axis(min=-10, max = 50):
     if(np.random.rand() < 0.05): # 5% under 0
@@ -128,7 +130,7 @@ def get_random_darts(num=3, spread=None):
     ret = {f"dart{i}": {"x":x[i],"y":y[i], "x_angle":angles[i][0], "y_angle":angles[i][1], "roll_angle":angles[i][2], "penetration": np.random.uniform(0.005,0.018)} for i in range(num)}
     return ret
 
-def get_random_scene_def(sensors_num=1):
+def get_random_scene_def(sensors_num=1, darts_num = None):
     flight_texture_file, shaft_col = get_random_coherent_shaft_cols_and_texture ()
 
     params = {}#"render_size":480, "spp":35}
@@ -143,7 +145,9 @@ def get_random_scene_def(sensors_num=1):
     
     params["sensors_def"] = {"rotations":get_random_sensors_rotations(sensors_num), "fov":37.4, "distance_factors": np.random.uniform(0.9,1.3,sensors_num)}
     
-    params["darts"] = get_random_darts(choice([1,2,3],[0.2,0.3,0.5]), spread=0.02 if random.random()<0.5 else None)
+
+    nb_darts = darts_num if darts_num is not None else choice([1,2,3],[0.2,0.3,0.5])
+    params["darts"] = get_random_darts(nb_darts, spread=0.02 if random.random()<0.5 else None)
 
     # params["darts"] = {
     #         "dart1": {"x":0.0,"y":0.0, "x_angle":10.0, "y_angle":0.5, "roll_angle":10.6, "penetration": 0.013},
@@ -159,8 +163,67 @@ def render_random(render_size=480, spp=35, out_dir="_GENERATED", total=60, senso
         render_and_save(render_size=render_size, spp=spp, out_dir=out_dir, base_name=hash, **params)
 
 
-if __name__ == "__main__":
+def render_random_diff(render_size=480, spp=35, out_dir="_GENERATED", total=60, sensors_num = 1,angle_jitter = 0.0,distance_jitter=0.0):
+    os.makedirs(out_dir,exist_ok=True)
+    for i in tqdm(range(total//sensors_num)):
+        params = get_random_scene_def(sensors_num,3)
+        hash = hashlib.sha256(json.dumps(params, sort_keys=True,default=lambda e : str(e)).encode('utf-8')).hexdigest()
 
+        params_mods = params.copy()
+
+        all = []
+        for drt in range(4):
+            params_mods = params.copy()
+            params_mods["darts"] = {} if drt == 0 else {k:params["darts"][k] for k in list(params["darts"].keys())[:drt]}
+            if(angle_jitter>0):
+                params_mods["sensors_def"]["rotations"] =  params["sensors_def"]["rotations"]+np.random.normal(-angle_jitter,angle_jitter,params["sensors_def"]["rotations"].shape)
+            if(distance_jitter>0):
+                params_mods["sensors_def"]["distance_factors"] =  params["sensors_def"]["distance_factors"]+np.random.normal(-distance_jitter,distance_jitter,params["sensors_def"]["distance_factors"].shape)
+                
+            images, projs_cals, projs_darts, projs_darts_bbox, board_metadata = render(render_size=render_size, spp=spp, **params_mods)
+            all.append((images, projs_cals, projs_darts, projs_darts_bbox, board_metadata))
+
+        # hash = hashlib.sha256(json.dumps(params, sort_keys=True,default=lambda e : str(e)).encode('utf-8')).hexdigest()
+
+        # render_and_save(render_size=render_size, spp=spp, out_dir=out_dir, base_name=hash, **params)
+        print("sensors:",len(all[drt][0]))
+        base_file = hash
+        for ii in range(sensors_num):
+            empty = None
+            for drt in range(len(all)):
+                # # Denoise the rendered image
+                # denoiser = mi.OptixDenoiser(input_size=image.shape[:2], albedo=False, normals=False, temporal=False)
+                # image = denoiser(image)
+                
+                img = (np.clip(all[drt][0][ii].numpy()** (1.0 / 2.2),0,1.0)* 255).astype('uint8')
+                #mi.Bitmap(all[drt][0][ii]).convert(pixel_format=mi.Bitmap.PixelFormat.RGB, component_format=mi.Struct.Type.UInt8, srgb_gamma=True).write(img_save_path)
+                img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+                #img = cv2.blur(img,(5,5))
+                if(empty is None):
+                    empty = img
+                else:
+                    diff = cv2.absdiff(img,empty)
+                    #blur_sz = 3
+                    #kernel = np.ones((blur_sz, blur_sz), np.uint8)
+                    #diff = cv2.morphologyEx(diff, cv2.MORPH_CLOSE, kernel)
+                    #diff = cv2.morphologyEx(diff, cv2.MORPH_CLOSE, kernel)
+                    #diff = cv2.erode(diff,(3,3), iterations = 3)
+                    
+                    # img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
+                    # cv2.imshow("dart",diff)
+                    # cv2.imshow("prev",empty)
+                    # cv2.imshow("img",img)
+                    # cv2.waitKey()
+                    empty = img
+                    tip = all[drt][2][ii][-1]
+                    box = all[drt][3][ii][-1]
+                    all[drt][2][ii] = [tip]
+                    all[drt][3][ii] = [box]
+                    img_save_path = os.path.join(out_dir,f'{base_file}_{drt}_{ii}.jpg')
+                    cv2.imwrite(img_save_path,diff)
+                    save_metadata(f"{os.path.splitext(img_save_path)[0]}.json",all[drt][4], all[drt][1][ii], all[drt][2][ii], all[drt][3][ii])
+
+if __name__ == "__main__":
 
 #print(get_variations_around_random_axis(3,amplitudes=[5,3,180]))
 #test_func(get_rnd_x_axis)
@@ -172,11 +235,16 @@ if __name__ == "__main__":
     parser.add_argument("-s",'--render_size', type=int, default=640, help="Render size is sxs")
     parser.add_argument("-v",'--view_points', type=int, default=3, help="Number of view points renders for each sample")
     parser.add_argument("-q",'--quality', type=int, default=35, help="Number of sample per rays")
-    parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destinataion directory")
+    parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destination directory")
+    parser.add_argument("-t", "--type", type=str, default= "normal", choices=['normal', 'temporal'], help="Dataset type")
     
     args = parser.parse_args()
 
     from mitsuba import Thread, LogLevel
     Thread.thread().logger().set_log_level(LogLevel.Error)
 
-    render_random(render_size=args.render_size,spp=args.quality,sensors_num=args.view_points, out_dir=args.directory, total=args.number)
+    if(args.type == "temporal"):
+        render_random_diff(render_size=args.render_size,spp=args.quality,sensors_num=args.view_points, out_dir=args.directory, total=args.number, angle_jitter = 0.1, distance_jitter = 0)
+    else:
+        render_random(render_size=args.render_size,spp=args.quality,sensors_num=args.view_points, out_dir=args.directory, total=args.number)
+    

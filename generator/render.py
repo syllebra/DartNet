@@ -343,6 +343,19 @@ def render(render_size = 800, spp=35, **params ):
 
     return images, projs_cal, projs_darts, projs_darts_bbox, board_metadata
 
+
+def save_metadata(outfile, board_metadata,  projs_cals, projs_darts, projs_darts_bbox):
+        md = {"kc":{}, "bbox":{},"board_file":board_metadata["board"]["file"]}
+        for i,k in enumerate(["cal1","cal2","cal3","cal4"]):
+            md["kc"][k] = projs_cals[i]
+        for i in range(len(projs_darts)):
+            md["kc"][f"dart{i}"] = projs_darts[i]            
+        for i in range(len(projs_darts_bbox)):
+            md["bbox"][f"dart{i}"] = projs_darts_bbox[i]
+
+        with open(outfile, "w") as f:
+            json.dump(md, f, indent=4)
+
 def render_and_save(out_dir="_GENERATED", render_size = 800, spp=35, **params):
     images, projs_cals, projs_darts, projs_darts_bbox, board_metadata = render(render_size=render_size, spp=spp, **params)
     os.makedirs(out_dir,exist_ok=True)
@@ -358,17 +371,7 @@ def render_and_save(out_dir="_GENERATED", render_size = 800, spp=35, **params):
         #img = (np.clip(image.numpy()** (1.0 / 2.2),0,1.0)* 255).astype('uint8')
         mi.Bitmap(image).convert(pixel_format=mi.Bitmap.PixelFormat.RGB, component_format=mi.Struct.Type.UInt8, srgb_gamma=True).write(img_save_path)
 
-        md = {"kc":{}, "bbox":{},"board_file":board_metadata["board"]["file"]}
-        for i,k in enumerate(["cal1","cal2","cal3","cal4"]):
-            md["kc"][k] = projs_cals[ii][i]
-        for i in range(len(projs_darts[ii])):
-            md["kc"][f"dart{i}"] = projs_darts[ii][i]            
-        for i in range(len(projs_darts_bbox[ii])):
-            md["bbox"][f"dart{i}"] = projs_darts_bbox[ii][i]
-
-        data_save_path = f"{os.path.splitext(img_save_path)[0]}.json"
-        with open(data_save_path, "w") as f:
-            json.dump(md, f, indent=4)
+        save_metadata(f"{os.path.splitext(img_save_path)[0]}.json",board_metadata, projs_cals[ii], projs_darts[ii], projs_darts_bbox[ii])
 
 def debug_file(file=r"C:\Users\csyllebran\Documents\PERSONNEL\words\d\tmp_0.jpg"):
     from PIL import Image
