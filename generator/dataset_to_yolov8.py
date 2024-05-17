@@ -133,7 +133,7 @@ if __name__ == "__main__":
         reorganize_images_data(directory,validation_ratio, test_ratio)
         translate_annotations(directory, width=None, height=None, no_cals=args.no_cals)
         with open(os.path.join(directory,"data.yml"),"w") as outfile:
-            outfile.write(f"path: {directory}\n")
+            #outfile.write(f"path: {directory}\n")
             outfile.write(f"train: images/train\n")
             outfile.write(f"val: images/val\n")
             if(test_ratio>0):
