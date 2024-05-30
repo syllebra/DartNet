@@ -8,13 +8,17 @@ import os
 import json
 from target_detector import TargetDetector
 from board import Board, transform_points
+from videocapture import ScreenVideoCapture
+
 
 # start webcam
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_A.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
-cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
+#cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
+cap = ScreenVideoCapture(pick=True)
+
 time_mult=1.5#0.0001
 fps = 21.0
 
@@ -22,8 +26,9 @@ fps = 21.0
 #board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
 board_img_path = 'generator/3D/Boards/winmau_blade_6.jpg'
 board = Board(board_img_path.replace(".jpg",".json"))
-# with open(board_img_path.lower().replace(".jpg",".json")) as f:
-#     board_def = json.load(f)
+
+with open(board_img_path.replace(".jpg",".json")) as f:
+    board_def = json.load(f)
 
 detector = TargetDetector(board_img_path)
 
