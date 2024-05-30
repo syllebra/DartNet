@@ -7,10 +7,14 @@ import time
 import os
 import json
 from target_detector import TargetDetector
+from videocapture import ScreenVideoCapture
 # start webcam
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
-cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
+#cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/output2.mp4")
+
+cap = ScreenVideoCapture(pick=True)
+
 
 board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 with open(board_img_path.replace(".jpg",".json")) as f:
