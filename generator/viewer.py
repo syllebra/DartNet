@@ -207,6 +207,7 @@ class Application(SimpleViewer):
         
     def compute_transformations(self, compute_inverse, angle=9, sz=2048 , outer_double_to_border_ratio=0.2255/0.17 ):
         xy = np.array([p for k,p in self.metadata["kc"].items()])
+        #xy = np.array([self.metadata["kc"][k] for k in ["cal1","cal2","cal3","cal4"]])
         xy = xy[:, :2]
         c = seg_intersect(xy[0],xy[1],xy[2], xy[3])
         cd = [sz*0.5,sz*0.5]
