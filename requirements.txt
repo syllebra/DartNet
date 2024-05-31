@@ -8,3 +8,5 @@ PyYAML
 scipy
 tqdm
 yacs
+pywin32
+playsound==1.2.2

@@ -9,23 +9,25 @@ import json
 from target_detector import TargetDetector
 from board import Board, transform_points
 from videocapture import ScreenVideoCapture
+import playsound
 
+MAX_CLASSES = 6
 
 # start webcam
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
-#cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_A.mp4")
+#cap = cv2.VideoCapture("./datasets/real/vid/unicorn_eclipse_hd2_A.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
 #cap = ScreenVideoCapture(pick=True)
-
-time_mult=0.25#0.0001
+cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
+time_mult=.25#0.0001
 fps = 21.0
 
 board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 #board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
-#board_img_path = 'generator/3D/Boards/winmau_blade_6.jpg'
-cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
+#board_img_path = 'generator/3D/Boards/winmau_blade_5.jpg'
+
 board = Board(board_img_path.replace(".jpg",".json"))
 
 with open(board_img_path.replace(".jpg",".json")) as f:
@@ -44,13 +46,17 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
 #model = YOLO("best_m.pt")
 model = YOLO("best_s_tip_boxes640_B.pt")
+
+temporal_model = YOLO("best_temporal_A.pt")
 #model = YOLO("last.pt")
 model_train_size = 640
 force_opencv_detector = True
 use_clahe = False
-stablize = True
+temporal_detection = True
+temporal_detection_on = False
+temporal_filter = 300 # ms to wait to validate (try to filter dart in flight, not yet landed) TODO: flight detection?
 
-locked_target_delay = 10 # 10 frames without moving => stable
+locked_target_delay = 5 # 10 frames without moving => stable
 locked_frames = 0
 locked = False
 last_cal_pts = None
@@ -87,9 +93,10 @@ def find_cal_pts(res, confidence_min = 0.5):
 
     return None if pts_cal_found <4 else pts_cal
 
-def filter_res(res):
-    pts_cal_conf= [0.0,0.0,0.0,0.0]
-    best_id = [None,None,None,None]
+#keep only best confidence of a given class
+def filter_res(res, filter_classes = [1,2,3,4]):
+    pts_cal_conf= [0.0] * MAX_CLASSES
+    best_id = [None] * MAX_CLASSES
     
     keep = []
     # coordinates
@@ -99,10 +106,10 @@ def filter_res(res):
 
         # class name
         cls = box["cls"]
-        if(cls>0 and cls<5):
-            if(confidence<=pts_cal_conf[cls-1]): continue
-            pts_cal_conf[cls-1] = confidence
-            best_id[cls-1] = i
+        if(cls in filter_classes):
+            if(confidence<=pts_cal_conf[cls]): continue
+            pts_cal_conf[cls] = confidence
+            best_id[cls] = i
         else:
             keep.append(i)
 
@@ -113,7 +120,7 @@ def filter_res(res):
 def infer(img, mod = None):
     if(mod is None):
         mod = model
-    results = mod(img, stream=True, max_det=25, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28)
+    results = mod(img, stream=True, max_det=25, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
 
     res = []
     for r in results:
@@ -128,14 +135,60 @@ def infer(img, mod = None):
             res.append({"x1":x1, "y1":y1,"x2":x2, "y2":y2, "conf":confidence, "cls": cls})
     return res
 
+
+def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191)], filter=None, status = "not_detected", force_draw_all = False):
+    if(force_draw_all or status != "not_detected"):
+        for box in res:
+            # confidence
+            confidence = box["conf"]
+            #print("Confidence --->",confidence)
+
+            # class name
+            cls = box["cls"]
+
+            if(filter is not None and cls not in filter):
+                continue
+
+            x1, y1, x2, y2 = int(box["x1"]), int(box["y1"]), int(box["x2"]), int(box["y2"]) # convert to int values
+
+            # put box in cam
+            cv2.rectangle(img, (x1, y1), (x2, y2), box_cols[cls], 1)
+
+            text = f"{classNames[cls]} ({confidence:.2f})"
+            score = False
+            if(cls == 0):
+                scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
+                text = f"{scores[0]} ({confidence:.2f})"
+                score = True
+
+            # object details
+            org = [x1, y1]
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            fontScale = 1.2 if score else 0.6
+            color = box_cols[cls]
+            thickness = 4 if score else 1
+
+            cv2.putText(img, text, org, font, fontScale, color, thickness)
+
+        for p in pts_cal:
+            cv2.circle(img, p.astype(np.int32),4,(200,180,60),cv2.FILLED)
+    
+    img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=status_colors[status])
+    return img
+
 ts = time.time()
 last = None
 last_diff = None
+
+last_dart = None
+last_dart_time = 0
 
 while True:
     if(time_mult > 0):
         cap.set(cv2.CAP_PROP_POS_MSEC, (time.time()-ts)*1000*time_mult)
     success, img = cap.read()
+    if(not success):
+        continue
     ratio = None
     cropped = False
     if(crop is not None):
@@ -150,34 +203,90 @@ while True:
 
         cropped = True
 
-    res = infer(img)
-
-    pts_cal = find_cal_pts(res)
-
-    opencv_detected = False
-    if(not locked and (force_opencv_detector or pts_cal is None)):
-        tps = time.time()
-        found_cals, M, conf = detector.detect(img)
-        if(M is not None):
-            pts_cal = found_cals
-            for i,p in enumerate(pts_cal):
-                v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':conf, "cls":i+1}
-                res.append(v)
-            opencv_detected = True
-        print(f"OpenCV target Detector: {int((time.time()-tps)*1000)} ms")
-
-    res = filter_res(res)
-    
+    pts_cal = None
     if(locked):
         pts_cal = last_cal_pts
     else:
+        res = infer(img)
         pts_cal = find_cal_pts(res)
 
-    if(cropped and pts_cal_dst is None and pts_cal is not None):
-        pts_cal_dst = pts_cal.copy()
+        opencv_detected = False
+        if(not locked and (force_opencv_detector or pts_cal is None)):
+            tps = time.time()
+            found_cals, M, conf = detector.detect(img)
+            if(M is not None):
+                pts_cal = found_cals
+                for i,p in enumerate(pts_cal):
+                    v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':conf, "cls":i+1}
+                    res.append(v)
+                opencv_detected = True
+            print(f"OpenCV target Detector: {int((time.time()-tps)*1000)} ms")
+
+        # Filter calibration points if multiple
+        res = filter_res(res)
+        pts_cal = find_cal_pts(res)
+
+    if(cropped and temporal_detection and pts_cal is not None):
+        tps = time.time()
+        img_gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY) / 255.0
+        if(last is not None):
+            #diff = abs(img_gray-last)
+            diff = cv2.absdiff(img_gray, last)
+            #diff = diff *diff
+            #diff[diff<0.4]=0
+            if(last_diff is not None):
+                #delta = abs(diff-last_diff)
+                delta = cv2.absdiff(diff, last_diff)
+
+                # Check if right amount of pixels is beeing modified before inference
+                non_null = np.sum(delta>0.04)
+                pct = non_null * 100.0 / (delta.shape[0]*delta.shape[1])
+                #print(f"PCT:{pct:.2f}")
+                if(pct>0.1 and pct < 13):
+                    delta = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
+                    cv2.imshow("delta", delta)
+                    temporal_detection_on = True
+                    
+                    res = infer(delta, temporal_model)
+                    res = [r for r in res if r['conf']>0.4]
+                    cpt_darts = 0
+                    cpt_tips = 0
+                    res = filter_res(res,filter_classes=[0,1])
+                    for i in range(len(res)):
+                        if(res[i]["cls"]==1):
+                            cpt_darts += 1
+                            res[i]["cls"] = 5
+                        elif(res[i]["cls"]==0):
+                            cpt_tips += 1
+                    if(cpt_tips>0 and cpt_darts>0):
+                        print(res)
+                        if(last_dart is None):
+                            last_dart = res
+                            last_dart_time = time.time()
+                        else:
+                            last_dart.extend(res)
+                            last_dart = filter_res(last_dart,filter_classes=[0,5])
+
+                        # win = f"{int((time.time()-ts)*1000)} ms"
+                        # delta = draw(delta,res,force_draw_all=True)
+                        # # img = draw(img,res,force_draw_all=True)
+                        # # cv2.imshow(f"{win}", img)
+                        # cv2.imshow(f"{win}_temporal", delta)
+                        
+                        # # for r in res:
+                        # playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
+                else:
+                    res = []
+                    #cv2.waitKey()
+            #cv2.imshow("diff", diff)
+            last_diff = diff
+            
+        else:
+            last = img_gray
+        #print(f"Temporal computation: {int((time.time()-tps)*1000)} ms")
 
     # check if moved
-    if(locked_target_delay>0 and not locked):
+    if(locked_target_delay>0 and not locked and pts_cal is not None):
         if(last_cal_pts is not None):
             diff = (last_cal_pts-pts_cal)
             moved = np.max(diff)
@@ -187,39 +296,8 @@ while True:
                     locked = True
         last_cal_pts = pts_cal
 
-    if(locked and stablize and pts_cal is not None and pts_cal_dst is not None):
-        M = cv2.getPerspectiveTransform(pts_cal.astype(np.float32), pts_cal_dst.astype(np.float32))
-        im = cv2.warpPerspective(img.copy(), M, (img.shape[1],img.shape[0]))
-
-        cv2.imshow("Mon Image", im)
-        img_gray = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY) / 255.0
-        if(last is not None):
-            diff = abs(img_gray-last)
-            #diff = diff *diff
-            #diff[diff<0.4]=0
-            if(last_diff is not None):
-                delta = abs(diff-last_diff)
-                b = 50
-                delta[:b,:] = 0
-                delta[-b:,:] = 0
-                delta[:,:b] = 0
-                delta[:,-b:] = 0
-
-                kernel = np.ones((3,3),np.uint8)
-                delta = cv2.erode(delta,kernel,iterations = 1)
-                delta = cv2.dilate(delta,kernel,iterations = 10)
-                delta = cv2.erode(delta,kernel,iterations = 5)
-
-                cv2.imshow("delta", (delta>0.35)*1.0)
-            last_diff = diff
-            
-        else:
-            last = img_gray
-  
-    # Filter calibration points if multiple
-
+    # First crop resize after initial detection
     if(pts_cal is not None):
-        #center = sum(pts_cal)
         if(crop is None):
             center = seg_intersect(pts_cal[0],pts_cal[1],pts_cal[2],pts_cal[3])
             x1 = int(center[0]-12)
@@ -229,7 +307,7 @@ while True:
             cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
             mode = 0
             if(mode == 0):
-                dis = (pts_cal-center) * 1.6
+                dis = (pts_cal-center) * 1.35
                 max = np.max(np.abs(dis))
                 # print(center)
                 # print(max)
@@ -253,46 +331,17 @@ while True:
     #     crop = None
     #     cropped = False
 
-    def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191)], filter=None, status = "not_detected"):
-        if(status != "not_detected"):
-            for box in res:
-                # confidence
-                confidence = box["conf"]
-                #print("Confidence --->",confidence)
+    # Check if last dart ios validated
+    # print(last_dart)
+    if(last_dart is not None and (time.time()-last_dart_time)*1000 >= temporal_filter):
+        print("Last dart:",last_dart)
+        last_dart = None
 
-                # class name
-                cls = box["cls"]
-                if(filter is not None and cls not in filter):
-                    continue
-
-
-                x1, y1, x2, y2 = int(box["x1"]), int(box["y1"]), int(box["x2"]), int(box["y2"]) # convert to int values
-
-                # put box in cam
-                cv2.rectangle(img, (x1, y1), (x2, y2), box_cols[cls], 1)
-
-                text = f"{classNames[cls]} ({confidence:.2f})"
-                score = False
-                if(cls == 0):
-                    scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
-                    text = scores[0]
-                    score = True
-
-
-                # object details
-                org = [x1, y1]
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                fontScale = 1.2 if score else 0.6
-                color = box_cols[cls]
-                thickness = 4 if score else 1
-
-                cv2.putText(img, text, org, font, fontScale, color, thickness)
-
-            for p in pts_cal:
-                cv2.circle(img, p.astype(np.int32),4,(200,180,60),cv2.FILLED)
+        # scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
+        # text = f"{scores[0]} ({confidence:.2f})"
         
-        img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=status_colors[status])
-        return img
+        playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
+
     
     status = "not_detected"
     if(pts_cal is not None):

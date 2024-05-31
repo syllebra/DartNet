@@ -134,7 +134,6 @@ class ScreenVideoCapture():
         
     def _clean_window_capture(self):
         import win32gui
-        import win32ui        
         win32gui.DeleteObject(self.saveBitMap.GetHandle())
         self.saveDC.DeleteDC()
         self.mfcDC.DeleteDC()
@@ -145,7 +144,7 @@ class ScreenVideoCapture():
     #         self._clean_window_capture()
 
 
-    def read(self, cv_format = False):
+    def read(self, cv_format = True):
         if(self.hwnd is not None):
             return self._read_window(cv_format)
         
@@ -153,14 +152,18 @@ class ScreenVideoCapture():
             return False, None     
         img = ImageGrab.grab(bbox=self.box) #bbox specifies specific region (bbox= x,y,width,height)
         if(not cv_format):
-            return img
+            return True, img
         img_np = np.array(img)
         frame = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
         return True, frame
 
 if __name__ == "__main__":
-    cap = ScreenVideoCapture(window_name="(Memu)")
+    import time, playsound
+    playsound.playsound("sound/BEEP_Bips horaires 3 (ID 1629)_LS.mp3")
+    cap = ScreenVideoCapture(window_name="ax86 [En fonction] - Oracle VM VirtualBox")
     #cap.pick()
+    time.sleep(15)
+    playsound.playsound("sound/ROBTVox_Notification lasomarie 2 (ID 2060)_LS.mp3")
     cap.record()
     # success, frame = cap.read()
     # print(success, frame)
