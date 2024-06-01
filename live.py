@@ -20,7 +20,8 @@ MAX_CLASSES = 6
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
 #cap = ScreenVideoCapture(pick=True)
-cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
+print("Initilize video capture...")
+cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
 time_mult=.25#0.0001
 fps = 21.0
 
@@ -28,11 +29,10 @@ board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 #board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
 #board_img_path = 'generator/3D/Boards/winmau_blade_5.jpg'
 
+print("Load board data...")
 board = Board(board_img_path.replace(".jpg",".json"))
 
-with open(board_img_path.replace(".jpg",".json")) as f:
-    board_def = json.load(f)
-
+print("Initialize OpenCV SIFT detector...")
 detector = TargetDetector(board_img_path)
 
 status_colors = {"not_detected": (0,0,255), "detected": (0,255,0), "opencv_detected": (0,160,75), "locked":(160,160)}
@@ -45,16 +45,18 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 # model
 
 #model = YOLO("best_m.pt")
+print("Load general model...")
 model = YOLO("best_s_tip_boxes640_B.pt")
 
+print("Load temporal model...")
 temporal_model = YOLO("best_temporal_A.pt")
+
 #model = YOLO("last.pt")
 model_train_size = 640
 force_opencv_detector = True
 use_clahe = False
 temporal_detection = True
-temporal_detection_on = False
-temporal_filter = 300 # ms to wait to validate (try to filter dart in flight, not yet landed) TODO: flight detection?
+temporal_filter = 200 # ms to wait to validate (try to filter dart in flight, not yet landed) TODO: flight detection?
 
 locked_target_delay = 5 # 10 frames without moving => stable
 locked_frames = 0
@@ -176,12 +178,51 @@ def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,
     img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=status_colors[status])
     return img
 
+
+def concat_images(image_set, how='horizontal'):
+    return cv2.hconcat(image_set)
+
+def infer_temporal_detection(delta, min_conf = 0.4, debug = 0, dbg_img = None):
+    delta = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
+   
+    res = infer(delta, temporal_model)
+    res = [r for r in res if r['conf']>min_conf]
+    cpt_darts = 0
+    cpt_tips = 0
+    res = filter_res(res,filter_classes=[0,1])
+    tip = None
+    dart = None
+    for i in range(len(res)):
+        if(res[i]["cls"]==1):
+            cpt_darts += 1
+            res[i]["cls"] = 5
+            dart = res[i]
+        elif(res[i]["cls"]==0):
+            cpt_tips += 1
+            tip = [(float(res[i]["x1"])+float(res[i]["x2"]))*0.5,(float(res[i]["y1"])+float(res[i]["y2"]))*0.5]
+
+    if(cpt_tips>0 and cpt_darts>0):
+        if(debug >0):
+            win = f"{int((time.time()-ts)*1000)} ms"
+            delta = draw(delta,res,force_draw_all=True)
+            if(dbg_img is not None):
+                img = draw(dbg_img.copy(),res,force_draw_all=True)
+                cv2.imshow(win, concat_images([img, delta]))
+            else:
+                cv2.imshow(f"{win}_temporal", delta)
+    return tip, res
+
+
+# Infer models to prevent slow first calls
+print("Initializing models...")
+infer(np.zeros((model_train_size,model_train_size,3)), model)
+infer(np.zeros((model_train_size,model_train_size,3)), temporal_model)
+
+print("Starting main loop...")
 ts = time.time()
 last = None
 last_diff = None
-
-last_dart = None
-last_dart_time = 0
+last_dart_time = -1
 
 while True:
     if(time_mult > 0):
@@ -230,57 +271,50 @@ while True:
         tps = time.time()
         img_gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY) / 255.0
         if(last is not None):
-            #diff = abs(img_gray-last)
             diff = cv2.absdiff(img_gray, last)
-            #diff = diff *diff
-            #diff[diff<0.4]=0
             if(last_diff is not None):
-                #delta = abs(diff-last_diff)
                 delta = cv2.absdiff(diff, last_diff)
-
+                #delta = delta*delta
+                
                 # Check if right amount of pixels is beeing modified before inference
                 non_null = np.sum(delta>0.04)
                 pct = non_null * 100.0 / (delta.shape[0]*delta.shape[1])
                 #print(f"PCT:{pct:.2f}")
-                if(pct>0.1 and pct < 13):
-                    delta = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
-                    cv2.imshow("delta", delta)
-                    temporal_detection_on = True
-                    
-                    res = infer(delta, temporal_model)
-                    res = [r for r in res if r['conf']>0.4]
-                    cpt_darts = 0
-                    cpt_tips = 0
-                    res = filter_res(res,filter_classes=[0,1])
-                    for i in range(len(res)):
-                        if(res[i]["cls"]==1):
-                            cpt_darts += 1
-                            res[i]["cls"] = 5
-                        elif(res[i]["cls"]==0):
-                            cpt_tips += 1
-                    if(cpt_tips>0 and cpt_darts>0):
-                        print(res)
-                        if(last_dart is None):
-                            last_dart = res
+
+                potential_dart_movement = (pct>0.4 and pct < 10)
+
+                # dbg = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
+                # dbg = cv2.copyMakeBorder(dbg, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=(255,0,0) if potential_dart_movement else (50,0,0))
+                # cv2.imshow("delta", dbg)
+
+                if(potential_dart_movement):
+                    print(f"{int((time.time()-ts)*1000)}: potential_dart_movement {pct:.1f}%")
+                    playsound.playsound("sound/start-13691.mp3",False)
+                    # induce a small delay to let dart land and avoid detect while flying
+                    detect = False
+                    if(temporal_filter<0):
+                        detect = True
+                    else:
+                        if(last_dart_time<0):
                             last_dart_time = time.time()
                         else:
-                            last_dart.extend(res)
-                            last_dart = filter_res(last_dart,filter_classes=[0,5])
+                            elapsed = time.time() - last_dart_time
+                            detect = (elapsed*1000>=temporal_filter)
+                    if(detect):
+                        last_dart_time = -1
+                        tip, res = infer_temporal_detection(delta, debug=1,dbg_img=img)
+                        if(tip is not None):
+                            # for r in res:
+                            playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
+                            print(f"{int((time.time()-ts)*1000)}:{tip}")
 
-                        # win = f"{int((time.time()-ts)*1000)} ms"
-                        # delta = draw(delta,res,force_draw_all=True)
-                        # # img = draw(img,res,force_draw_all=True)
-                        # # cv2.imshow(f"{win}", img)
-                        # cv2.imshow(f"{win}_temporal", delta)
-                        
-                        # # for r in res:
-                        # playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
+                    #res = infer_temporal_detection(delta, debug=1,dbg_img=img)
                 else:
                     res = []
                     #cv2.waitKey()
             #cv2.imshow("diff", diff)
-            last_diff = diff
-            
+            if(last_diff is None or last_dart_time<0):
+                last_diff = diff
         else:
             last = img_gray
         #print(f"Temporal computation: {int((time.time()-tps)*1000)} ms")
@@ -330,17 +364,6 @@ while True:
     # else:
     #     crop = None
     #     cropped = False
-
-    # Check if last dart ios validated
-    # print(last_dart)
-    if(last_dart is not None and (time.time()-last_dart_time)*1000 >= temporal_filter):
-        print("Last dart:",last_dart)
-        last_dart = None
-
-        # scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
-        # text = f"{scores[0]} ({confidence:.2f})"
-        
-        playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
 
     
     status = "not_detected"
