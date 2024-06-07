@@ -21,7 +21,7 @@ MAX_CLASSES = 6
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
 #cap = ScreenVideoCapture(pick=True)
 print("Initilize video capture...")
-cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
+cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
 time_mult=.25#0.0001
 fps = 21.0
 
@@ -302,12 +302,15 @@ while True:
                             detect = (elapsed*1000>=temporal_filter)
                     if(detect):
                         last_dart_time = -1
-                        tip, res = infer_temporal_detection(delta, debug=1,dbg_img=img)
+                        tip, res = infer_temporal_detection(delta, debug=0,dbg_img=img)
                         if(tip is not None):
                             # for r in res:
                             playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
-                            print(f"{int((time.time()-ts)*1000)}:{tip}")
-
+                            scores = board.get_dart_scores(pts_cal,[[tip[0],tip[1]]])
+                            text = f"{scores[0]}"# ({tip["conf"]:.2f})"
+                            score = True
+                            print(f"{int((time.time()-ts)*1000)}:{tip}=>{text}")
+                            playsound.playsound(f"sound/hits/{scores[0]}.mp3", False)
                     #res = infer_temporal_detection(delta, debug=1,dbg_img=img)
                 else:
                     res = []
