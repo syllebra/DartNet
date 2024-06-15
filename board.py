@@ -20,11 +20,13 @@ BOARD_DICT = {
 class Board():
     def __init__(self, metadata_path, name= None) -> None:
         self.metadata_path = metadata_path
+        self.image_path = None
         if(not os.path.exists(self.metadata_path)):
             self.metadata_path = None
-        self.image_path = self.metadata_path.replace(".json",".jpg")
-        if(not os.path.exists(self.image_path)):
-            self.image_path = None
+        else:
+            self.image_path = self.metadata_path.replace(".json",".jpg")
+            if(not os.path.exists(self.image_path)):
+                self.image_path = None
 
         self.name = name if name is not None else "Board"
         self.image_cal_pts = np.zeros((4,2)) # calib point in Board definition image frame
