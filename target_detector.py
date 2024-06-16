@@ -343,7 +343,7 @@ if __name__ == "__main__":
 
     import cv2 
     import numpy as np
-    import os
+    import os, json
     
     # Read image. 
     #img = cv2.imread(r'C:\Users\csyllebran\Documents\PERSONNEL\words\DartNet\generator\3D\Boards\orig\unicorn-eclipse-hd2.jpg', cv2.IMREAD_COLOR) 
@@ -351,12 +351,20 @@ if __name__ == "__main__":
     dir = os.path.dirname(__file__)
    
     dir = r'datasets\real\target_detector_test'
+    dir = r'generator\_GENERATED'
     tests = [os.path.join(dir,f) for f in os.listdir(dir) if ".jpg" in f or ".png" in f]
 
     for path in tests:
-        tmp = os.path.basename(path).split("_")
-        board_path = '_'.join(tmp[:-1])+".json"
-        board_path = os.path.join("generator/3D/Boards", board_path)
+        board_path = path.replace(".jpg",".json") if ".jpg" in path  else path.replace(".png",".json")
+        if(os.path.exists(board_path)):
+            with open(board_path,"r") as f:
+                data = json.load(f)
+                if("board_file" in data):
+                    board_path = os.path.join("generator",data["board_file"])
+        else:
+            tmp = os.path.basename(path).split("_")
+            board_path = '_'.join(tmp[:-1])+".json"
+            board_path = os.path.join("generator/3D/Boards", board_path)
         board = Board(board_path)
 
         img = cv2.imread(path, cv2.IMREAD_COLOR)
@@ -458,25 +466,27 @@ if __name__ == "__main__":
 
         def get_points_4(img, pyr = False):
             im_src = img.copy()
-            def extract_double_treble_from_color(img):            
+            def extract_double_treble_from_color(img,ksize=5,thres= 180):            
                 imCalHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
                 clahe = cv2.createCLAHE(clipLimit=1, tileGridSize=(20, 20))
-                kernel = np.ones((5, 5), np.float32) / 25
+                kernel = np.ones((ksize, ksize), np.float32) / (ksize*ksize)
                 blur = cv2.filter2D(imCalHSV, -1, kernel)
                 h, s, imCal = cv2.split(blur)
+                s = np.clip(s *1.4, 0, 255).astype(np.uint8)                
                 s = clahe.apply(s)
-                s[s<180]=0
+                s[s<thres]=0
 
                 blur_sz = 1
                 kernel = np.ones((blur_sz, blur_sz), np.uint8)
                 s = cv2.morphologyEx(s, cv2.MORPH_CLOSE, kernel)
                 s = cv2.morphologyEx(s, cv2.MORPH_OPEN, kernel)
 
-#                cv2.imshow("sat", s)
-                img[s<180] = 0
+                #cv2.imshow("sat", s)
+                s[s<thres] = 0
 #                cv2.imshow("sat2", img)
                 return s
 
+            #img = cv2.convertScaleAbs(img, alpha=3.0, beta=0)
 
             imCalHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
             kernel = np.ones((3, 3), np.float32) / 25
@@ -499,6 +509,12 @@ if __name__ == "__main__":
             
             # return the edged image
             edged = autocanny(thresh)  # imCal            
+# #             img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+# #             img_gray = cv2.blur(img_gray,(6,5))
+# # #            cv2.imshow("thresh2", thresh)
+# #             # return the edged image
+#             edged = autocanny(img_gray)  # imCal
+            cv2.imshow("edges",edged)
 
             # line intersection
             def intersectLines(pt1, pt2, ptA, ptB):
@@ -695,33 +711,38 @@ if __name__ == "__main__":
                         cv2.drawMarker(dbg,p.astype(np.int32),(0,128,255),cv2.MARKER_CROSS,20,1,cv2.LINE_AA)
            
 
-            # print(lines_a)
-            # gray = cv2.cvtColor(im_src, cv2.COLOR_BGR2GRAY)/255.0
-            # #gray=cv2.blur(gray,(3,3))
-            # #laplacian = cv2.Laplacian(gray,cv2.CV_64F,ksize=5)
-            # sobelx = cv2.Sobel(gray,cv2.CV_64F,1,0,ksize=5)
-            # sobely = cv2.Sobel(gray,cv2.CV_64F,0,1,ksize=5)
+            def sobel_threshold(img, ksize=5,thres=200):
+                # print(lines_a)
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)/255.0
+                #gray=cv2.blur(gray,(3,3))
+                #laplacian = cv2.Laplacian(gray,cv2.CV_64F,ksize=5)
+                sobelx = cv2.Sobel(gray,cv2.CV_64F,1,0,ksize=ksize)
+                sobely = cv2.Sobel(gray,cv2.CV_64F,0,1,ksize=ksize)
 
-            # #cv2.imshow(f"laplacian",cv2.convertScaleAbs(laplacian)*15)
-            # sob = cv2.convertScaleAbs(sobelx*sobely)*5
-            # # #sob[sob<150] = 10
-            # ret, sob = cv2.threshold(sob,200,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-            # kernel = np.array([[0.05,0.25,0.05],[0.25,0.5,0.25],[0.05,0.25,0.05]])#np.ones((2,2), np.uint8)
-            # # # for i in range(1):
-            # # #     #sob=cv2.erode(sob,kernel)
-            # # #     sob = cv2.morphologyEx(sob, cv2.MORPH_ERODE, kernel)      
+                #cv2.imshow(f"laplacian",cv2.convertScaleAbs(laplacian)*15)
+                sob = cv2.convertScaleAbs(sobelx*sobely)*15
+                #sob[sob<150] = 10
+                ret, sob = cv2.threshold(sob,thres,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+                kernel = np.array([[0.05,0.25,0.05],[0.25,0.5,0.25],[0.05,0.25,0.05]])#np.ones((2,2), np.uint8)
+                # # # for i in range(1):
+                # # #     #sob=cv2.erode(sob,kernel)
+                # # #     sob = cv2.morphologyEx(sob, cv2.MORPH_ERODE, kernel)      
 
-            # for i in range(3):
-            #     sob = cv2.morphologyEx(sob, cv2.MORPH_DILATE, kernel)
-            # for i in range(3):
-            #     sob = cv2.morphologyEx(sob, cv2.MORPH_ERODE, kernel)
-            # # for i in range(3):
-            # #     sob = cv2.morphologyEx(sob, cv2.MORPH_DILATE, kernel)
-            #     #sob=cv2.dilate(sob,kernel)
-            # # for i in range(3):
-            # #     sob = cv2.morphologyEx(sob, cv2.MORPH_ERODE, kernel)      
+                for i in range(1):
+                    sob = cv2.morphologyEx(sob, cv2.MORPH_DILATE, kernel)
+                for i in range(1):
+                    sob = cv2.morphologyEx(sob, cv2.MORPH_ERODE, kernel)
+                # # for i in range(3):
+                # #     sob = cv2.morphologyEx(sob, cv2.MORPH_DILATE, kernel)
+                #     #sob=cv2.dilate(sob,kernel)
+                # # for i in range(3):
+                # #     sob = cv2.morphologyEx(sob, cv2.MORPH_ERODE, kernel)      
+                return sob
+               
 
-            #cv2.imshow(f"sobel",sob)
+
+
+            
             #cv2.imshow(f"sobely",cv2.convertScaleAbs(sobely)*5)
 
             def ellipse_from_watershed(im_src, img, mean_radius=160):
@@ -932,7 +953,10 @@ if __name__ == "__main__":
             
             
             def ellipse_detector_test_from_sat(center, angular_resol = 200, dis_max = 400):
-                im = np.zeros((angular_resol,dis_max))
+                
+
+                #filt = cv2.bilateralFilter(im_src, 11, 75, 75)
+
                 s = extract_double_treble_from_color(shifted)
                 cv2.imshow("sat",s)
                 # s = cv2.dilate(s, (9,9),iterations=20)
@@ -941,6 +965,9 @@ if __name__ == "__main__":
                 # print(np.max(edged))
                 # s[edged<128] = 0
                 # cv2.imshow("test3",s)
+
+                sob = sobel_threshold(im_src)
+                cv2.imshow("Sobel",sob)
 
                 pts = []
                 angles = []
@@ -1021,14 +1048,26 @@ if __name__ == "__main__":
                     Mi = cv2.getPerspectiveTransform(dst_pts,src_pts) if compute_inverse else None
                     return M, Mi                    
 
+                # sob = sobel_threshold(im_src)
+                # cv2.imshow(f"sobel",sob)
+                # y,x  = np.nonzero(edged)
+                # pts_sob = np.array([y,x]).T
+                # pts_sob = pts_sob[np.random.randint(0,len(pts_sob), 3000)]
+                # print(pts_sob.shape)
+
                 pts = np.array(pts)
                 extern_pts = pts[ext_ids]
                 if(len(extern_pts)<5):
                     return None
-                #el = FitEllipse_RANSAC(extern_pts, None, success_probabilities=0.99, outliers_ratio=0.5, inliers_dist=1.5, fixed_center=center)
+                
+                for ii, p in enumerate(pts):
+                    color = (0,255,255) if ii in ext_ids else (255,255,0)
+                    cv2.drawMarker(img, p.astype(np.int32),color,cv2.MARKER_TILTED_CROSS, 5,1)
+
                 el = ransac_fit(EllipseModel(), extern_pts, success_probabilities=0.99, outliers_ratio=0.5, inliers_thres=5)
                 if(el is None):
                     return None
+
                 sz = 640
                 M, Mi = get_ellipse_perspective_tr(el, center = center, sz = sz, dbg = True, color= (0,255,255))
                 if(M is None):
@@ -1045,6 +1084,9 @@ if __name__ == "__main__":
                     cv2.drawMarker(unwarped, p.astype(np.int32),color,cv2.MARKER_TILTED_CROSS, 5,1)
                 
                 cv2.drawMarker(unwarped, center_u.astype(np.int32),(0,255,255),cv2.MARKER_TILTED_CROSS, 20,2)
+                
+
+
                 
                 radius = ransac_fit(FixedCenterCircleBoardModel(center_u,board, min_dist=50), pts_u, success_probabilities=0.995, outliers_ratio=0.6, inliers_thres=5)
                 if(math.isnan(radius)):
@@ -1092,9 +1134,7 @@ if __name__ == "__main__":
                 #     color = (0,255,255) if abs(1.0-ratio)<0.0001 else (125,255,180)
                 #     cv2.ellipse(img, center = np.array(elt[0]).astype(np.int32), axes=(int(elt[1][0] * 0.5),int(elt[1][1] * 0.5)), angle = elt[2],startAngle=0,endAngle =360, color= color, thickness = 2, lineType=cv2.LINE_AA)
 
-
-
-                    
+            #board_ransac_detection(center)
             ellipse_detector_test_from_sat(center)
             cv2.imshow("image",img)                
             
