@@ -21,7 +21,7 @@ MAX_CLASSES = 6
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
 #cap = ScreenVideoCapture(pick=True)
 print("Initilize video capture...")
-cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
+cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
 time_mult=.25#0.0001
 fps = 21.0
 
@@ -53,7 +53,7 @@ temporal_model = YOLO("best_temporal_A.pt")
 
 #model = YOLO("last.pt")
 model_train_size = 640
-force_opencv_detector = True
+force_opencv_detector = False
 use_clahe = False
 temporal_detection = True
 temporal_filter = 200 # ms to wait to validate (try to filter dart in flight, not yet landed) TODO: flight detection?
@@ -172,8 +172,8 @@ def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,
 
             cv2.putText(img, text, org, font, fontScale, color, thickness)
 
-        for p in pts_cal:
-            cv2.circle(img, p.astype(np.int32),4,(200,180,60),cv2.FILLED)
+        color_tgt = (200,180,60)
+        board.draw(img, pts_cal,color_tgt)
     
     img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=status_colors[status])
     return img
@@ -254,7 +254,7 @@ while True:
         opencv_detected = False
         if(not locked and (force_opencv_detector or pts_cal is None)):
             tps = time.time()
-            found_cals, M, conf = detector.detect(img)
+            found_cals, M, conf = detector.detect(img, refine_pts=True)
             if(M is not None):
                 pts_cal = found_cals
                 for i,p in enumerate(pts_cal):

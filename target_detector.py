@@ -9,8 +9,20 @@ import math
 from board import Board
 import statistics
 import time
+from functools import wraps
 
 from gen_ransac import *
+
+def timeit(func):
+    @wraps(func)
+    def timeit_wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
+        return result
+    return timeit_wrapper
 
 def transform_points( xy, M):
     xyz = np.concatenate((np.array(xy), np.ones((len(xy), 1))), axis=-1).astype(np.float32)
@@ -351,7 +363,7 @@ if __name__ == "__main__":
     dir = os.path.dirname(__file__)
    
     dir = r'datasets\real\target_detector_test'
-    dir = r'generator\_GENERATED'
+    #dir = r'generator\_GENERATED'
     tests = [os.path.join(dir,f) for f in os.listdir(dir) if ".jpg" in f or ".png" in f]
 
     for path in tests:
@@ -562,7 +574,7 @@ if __name__ == "__main__":
             
                 for i in range(0, len(linesP)):
                     l = linesP[i][0]
-                    #cv2.line(dbg, (l[0], l[1]), (l[2], l[3]), (255,0,255), 1, cv2.LINE_AA)
+                    cv2.line(dbg, (l[0], l[1]), (l[2], l[3]), (0,0,255), 3, cv2.LINE_AA)
                     for j in range(i, len(linesP)):
                         l2 = linesP[j][0]
 
@@ -1172,9 +1184,122 @@ if __name__ == "__main__":
             cv2.imshow("corner", dst)             
         #get_points_1(img.copy())
         #get_points_2(img.copy())
-        #get_points_3(img.copy())q
-        get_points_4(img.copy())
+        #get_points_3(img.copy())
+        #get_points_4(img.copy())
         #get_points_5(img.copy())
+        
+        @timeit
+        def viola_jones_test(img):
+            dbg = img.copy()
+            cascade = cv2.CascadeClassifier("dartcascade/cascade.xml")
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+            boards = cascade.detectMultiScale(gray, 1.05)#,3)#, 5)
+            for (x, y, w, h) in boards:
+                cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            
+            #circles = cv2.HoughCircles(img,cv2.HOUGH_GRADIENT,1 , gray.shape[0]/8, None, 200, 100, 0, 0)
+            gray_blurred = cv2.blur(gray, (3, 3)) 
+            
+            # Apply Hough transform on the blurred image. 
+            detected_circles = cv2.HoughCircles(gray_blurred,  
+                            cv2.HOUGH_GRADIENT, 1, gray.shape[0]/8, param1 = 200, 
+                        param2 = 100, minRadius = 0, maxRadius = 0) 
+            
+            # Draw circles that are detected. 
+            if detected_circles is not None: 
+                # Convert the circle parameters a, b and r to integers. 
+                detected_circles = np.uint16(np.around(detected_circles)) 
+            
+                for pt in detected_circles[0, :]: 
+                    a, b, r = pt[0], pt[1], pt[2]
+
+                    # if(abs(a-W*0.5)>W*0.2): continue
+                    # if(abs(b-H*0.5)>H*0.2): continue
+            
+                    # Draw the circumference of the circle. 
+                    cv2.circle(dbg, (a, b), r, (0, 255, 0), 2) 
+            
+                    # Draw a small circle (of radius 1) to show the center. 
+                    cv2.circle(dbg, (a, b), 1, (0, 0, 255), 3) 
+
+            #gray_eq = cv2.equalizeHist(gray)
+
+            #canny = cv2.Canny(gray_eq, 100,300,None,3)
+            canny = autocanny(gray_blurred)
+            cv2.imshow("edges",canny)
+            lines = cv2.HoughLinesP(canny, 1, math.pi/180.0, 50,None, 50, 10)
+
+            def filter_lines(lines, sz, radius=3):
+                tmp = np.zeros(sz,np.uint8)
+                keep = []
+                for i,line in enumerate(lines):
+                    l = line[0]
+                    if((l[0]>=0 and l[0]<sz[1] and l[1]>=0 and l[1]<sz[0] and tmp[l[1],l[0]]==0)
+                       or (l[2]>=0 and l[3]<sz[1] and l[2]>=0 and l[3]<sz[0] and tmp[l[3],l[2]]==0)):
+                        cv2.circle(tmp,(l[0],l[1]),radius,255,-1)
+                        cv2.circle(tmp,(l[2],l[3]),radius,255,-1)
+                        keep.append(i)
+                return lines[keep]
+
+            if(lines is not None):
+                lines = filter_lines(lines,canny.shape,5)
+                for line in lines:
+                    l = line[0]
+                    cv2.line(dbg, (l[0], l[1]), (l[2], l[3]), (255,255,0), 2, cv2.LINE_AA)
+            
+            mini = np.inf
+            selected = None
+            selected_lines = None
+            circle_found = False
+            min_sz = 40
+
+            for bdi, bd in  enumerate(boards):
+                bxmax = bd[0]+bd[2]
+                bymax = bd[1]+bd[3]
+                if(bd[2]<min_sz or bd[3]<min_sz):
+                    continue                
+                if(bd[2]>mini and bd[3]>mini):
+                    continue
+
+                if detected_circles is not None:
+                    for pt in detected_circles[0, :]: 
+                        a, b, r = pt[0], pt[1], pt[2]
+                        if(r<min_sz):
+                            continue
+                        if(a>=bd[0] and a<=bxmax and b>=bd[1] and b<=bymax):
+                            selected = bdi
+                            mini = min(bd[2],bd[3])
+                            circle_found = True
+                
+                if lines is not None:
+                    ids_in = []
+                    for li,line in enumerate(lines):
+                        l = line[0]
+                        if((l[0]>=bd[0] and l[0]<bxmax and l[1]>=bd[1] and l[1]<bymax) or (l[2]>=bd[0] and l[2]<bymax and l[3]>=bd[1] and l[3]<bymax)):
+                            ids_in.append(li)
+                        
+                    if(circle_found):
+                        if(bdi == selected):
+                            selected_lines = ids_in.copy()
+                    elif( len(ids_in)>10):
+                        selected = bdi
+                        mini = min(bd[2],bd[3])
+                        selected_lines = ids_in.copy()
+
+            if(selected is not None):
+                (x, y, w, h) = boards[selected]
+                cv2.rectangle(dbg, (x,y), (x+w,y+h), (0, 0, 255), 4)
+                if(selected_lines is not None):
+                    for li in selected_lines:
+                        l = lines[li][0]
+                        cv2.line(dbg, (l[0], l[1]), (l[2], l[3]), (255,0,255), 2, cv2.LINE_AA)
+
+            cv2.imshow("VJ",dbg)
+
+        viola_jones_test(img)
+        
         key = cv2.waitKey(0)
         if(key == ord('q')):
             break
