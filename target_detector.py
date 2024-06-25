@@ -6,7 +6,7 @@ from time import time
 
 import random
 import math
-from board import Board
+from board import Board, transform_points
 import statistics
 import time
 from functools import wraps
@@ -189,17 +189,18 @@ class TargetDetector():
         # print( len(self.kp1), len(self.des1))
 
 
-    def match(self, img2):
+    def match(self, img2, compute_inverse=False):
+        Mi = None
         if(self.des1 is None):
-            return None, 0
+            return None, 0, Mi
         
         self.kp2, des2 = self.sift.detectAndCompute(img2,None)
 
         #print(self.kp1[0], self.des1[0])
         if(des2 is None):
-            return None, 0
+            return None, 0, Mi
         if ( len(self.des1)==0 or len(des2)==0 ):
-            return None, 0
+            return None, 0, Mi
         
         FLANN_INDEX_KDTREE = 1
         index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 2)
@@ -220,17 +221,18 @@ class TargetDetector():
             dst_pts = np.float32([ self.kp2[m.trainIdx].pt for m in self.good ]).reshape(-1,1,2)
         
             M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
-            
+            if(compute_inverse):
+                Mi, _ =  cv2.findHomography(dst_pts, src_pts, cv2.RANSAC,5.0)
             self.matchesMask = mask.ravel().tolist()
         else:
             #print( "Not enough matches are found - {}/{}".format(len(self.good), MIN_MATCH_COUNT) )
             self.matchesMask = None
-            return None, 0
+            return None, 0, Mi
 
-        return M, min(len(self.good)/(MIN_MATCH_COUNT), 1.0)
+        return M, min(len(self.good)/(MIN_MATCH_COUNT), 1.0), Mi
 
     def detect(self, img2, refine_pts=True):
-        M, conf = self.match(img2)
+        M, conf, _ = self.match(img2)
         if(M is None):
             return None, None, 0
         tr_xy = self.board.transform_cals(M,True)
@@ -1298,8 +1300,38 @@ if __name__ == "__main__":
 
             cv2.imshow("VJ",dbg)
 
-        viola_jones_test(img)
+        #viola_jones_test(img)
         
+        def detector_distortion_test(img):
+            img_path = board_path.replace(".json",".jpg")
+            if(not os.path.exists(img_path)):
+                cv2.imshow("Img", img)
+                return
+            detector = TargetDetector(img_path)
+            gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+            #found_cals, M, conf = detector.detect(img, refine_pts=True)
+            M, conf, Mi = detector.match(img, compute_inverse=True)
+            if(Mi is not None):
+                img = cv2.warpPerspective(img, Mi, (2048,2048))
+                img = cv2.resize(img,(640,640))
+                # tr_xy = board.transform_cals(M,True)
+                # if(len(tr_xy)<4):
+                #     return None, None, 0
+                        
+                # if(refine_pts):
+                #     tr_xy = refine_sub_pix(tr_xy, img2)
+                    
+                # if(len(tr_xy)<4):
+                #     return None, None, 0
+
+                # return tr_xy, M, conf
+    
+                color_tgt = (200,180,60)
+                tr_xy = detector.board.image_cal_pts * 640 / 2048
+                board.draw(img, tr_xy, color_tgt)
+            cv2.imshow("Img", img)
+
+        detector_distortion_test(img)
         key = cv2.waitKey(0)
         if(key == ord('q')):
             break
