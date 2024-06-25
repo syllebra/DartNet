@@ -383,8 +383,14 @@ while True:
         cv2.imshow('Webcam', img)
     # else:
     #     print(img)
-    if cv2.waitKey(1) == ord('q'):
+    key = cv2.waitKey(1)
+    if key == ord('q'):
         break
+    elif key == ord('r'):
+        cropped=False
+        crop = None
+        locked_frames = 0
+        lockex = False
 
 cap.release()
 cv2.destroyAllWindows()
