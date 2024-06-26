@@ -13,6 +13,12 @@ from functools import wraps
 
 from gen_ransac import *
 
+
+from ultralytics import YOLO
+print("Load general model...")
+model = YOLO("best_s_tip_boxes_cross_640.pt")
+
+
 def timeit(func):
     @wraps(func)
     def timeit_wrapper(*args, **kwargs):
@@ -23,6 +29,69 @@ def timeit(func):
         print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
         return result
     return timeit_wrapper
+
+
+
+
+@timeit
+def infer(img, mod = None):
+    if(mod is None):
+        mod = model
+    results = mod(img, stream=True, max_det=100, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
+
+    res = []
+    for r in results:
+        for box in r.boxes:
+            x1, y1, x2, y2 = box.xyxy[0]
+
+            # confidence
+            confidence = math.ceil((box.conf[0]*100))/100
+
+            # class name
+            cls = int(box.cls[0])
+            res.append({"x1":x1, "y1":y1,"x2":x2, "y2":y2, "conf":confidence, "cls": cls})
+    return res
+
+
+def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30)], filter=None, status = "not_detected", force_draw_all = False):
+    if(force_draw_all or status != "not_detected"):
+        for box in res:
+            # confidence
+            confidence = box["conf"]
+            #print("Confidence --->",confidence)
+
+            # class name
+            cls = box["cls"]
+
+            if(filter is not None and cls not in filter):
+                continue
+
+            x1, y1, x2, y2 = int(box["x1"]), int(box["y1"]), int(box["x2"]), int(box["y2"]) # convert to int values
+
+            # put box in cam
+            cv2.rectangle(img, (x1, y1), (x2, y2), box_cols[cls], 1)
+
+            text = f"{confidence:.2f}"
+            score = False
+            # if(cls == 0):
+            #     scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
+            #     text = f"{scores[0]} ({confidence:.2f})"
+            #     score = True
+
+            # object details
+            org = [x1, y1]
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            fontScale = 1.2 if score else 0.3
+            color = box_cols[cls]
+            thickness = 4 if score else 1
+
+            cv2.putText(img, text, org, font, fontScale, color, thickness)
+
+        # color_tgt = (200,180,60)
+        # board.draw(img, pts_cal,color_tgt)
+    
+    #img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=status_colors[status])
+    return img
 
 def transform_points( xy, M):
     xyz = np.concatenate((np.array(xy), np.ones((len(xy), 1))), axis=-1).astype(np.float32)
@@ -1302,36 +1371,44 @@ if __name__ == "__main__":
 
         #viola_jones_test(img)
         
-        def detector_distortion_test(img):
-            img_path = board_path.replace(".json",".jpg")
-            if(not os.path.exists(img_path)):
-                cv2.imshow("Img", img)
-                return
-            detector = TargetDetector(img_path)
-            gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-            #found_cals, M, conf = detector.detect(img, refine_pts=True)
-            M, conf, Mi = detector.match(img, compute_inverse=True)
-            if(Mi is not None):
-                img = cv2.warpPerspective(img, Mi, (2048,2048))
-                img = cv2.resize(img,(640,640))
-                # tr_xy = board.transform_cals(M,True)
-                # if(len(tr_xy)<4):
-                #     return None, None, 0
+        # def detector_distortion_test(img):
+        #     img_path = board_path.replace(".json",".jpg")
+        #     if(not os.path.exists(img_path)):
+        #         cv2.imshow("Img", img)
+        #         return
+        #     detector = TargetDetector(img_path)
+        #     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        #     #found_cals, M, conf = detector.detect(img, refine_pts=True)
+        #     M, conf, Mi = detector.match(img, compute_inverse=True)
+        #     if(Mi is not None):
+        #         img = cv2.warpPerspective(img, Mi, (2048,2048))
+        #         img = cv2.resize(img,(640,640))
+        #         # tr_xy = board.transform_cals(M,True)
+        #         # if(len(tr_xy)<4):
+        #         #     return None, None, 0
                         
-                # if(refine_pts):
-                #     tr_xy = refine_sub_pix(tr_xy, img2)
+        #         # if(refine_pts):
+        #         #     tr_xy = refine_sub_pix(tr_xy, img2)
                     
-                # if(len(tr_xy)<4):
-                #     return None, None, 0
+        #         # if(len(tr_xy)<4):
+        #         #     return None, None, 0
 
-                # return tr_xy, M, conf
+        #         # return tr_xy, M, conf
     
-                color_tgt = (200,180,60)
-                tr_xy = detector.board.image_cal_pts * 640 / 2048
-                board.draw(img, tr_xy, color_tgt)
+        #         color_tgt = (200,180,60)
+        #         tr_xy = detector.board.image_cal_pts * 640 / 2048
+        #         board.draw(img, tr_xy, color_tgt)
+        #     cv2.imshow("Img", img)
+
+        # detector_distortion_test(img)
+            
+        def detector_yolo(img):
+            res = infer(img, model)
+            draw(img, res, force_draw_all=True)
             cv2.imshow("Img", img)
 
-        detector_distortion_test(img)
+        detector_yolo(img)
+
         key = cv2.waitKey(0)
         if(key == ord('q')):
             break
