@@ -64,7 +64,7 @@ locked = False
 last_cal_pts = None
 
 # object classes
-classNames = ["tip", "cal1", "cal2", "cal3", "cal4", "dart"]
+classNames = ["tip", "cal1", "cal2", "cal3", "cal4", "dart","cross"]
 pts_cal_dst = None
 crop = None
 
@@ -138,7 +138,7 @@ def infer(img, mod = None):
     return res
 
 
-def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191)], filter=None, status = "not_detected", force_draw_all = False):
+def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30)], filter=None, status = "not_detected", force_draw_all = False):
     if(force_draw_all or status != "not_detected"):
         for box in res:
             # confidence
