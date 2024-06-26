@@ -364,7 +364,7 @@ if __name__ == "__main__":
     
     dir = os.path.dirname(__file__)
    
-    dir = r'datasets\real\target_detector_test'
+    dir = 'datasets/real/target_detector_test'
     #dir = r'generator\_GENERATED'
     tests = [os.path.join(dir,f) for f in os.listdir(dir) if ".jpg" in f or ".png" in f]
 

@@ -7,6 +7,7 @@ import pathlib
 import json
 import numpy as np
 import glob
+from add_cross_sections import get_cross_sections
 
 def get_data_file(image_file):
     file= os.path.splitext(image_file)[0]+".json"
@@ -59,7 +60,7 @@ def get_image_size(file):
 import os
 import struct
 
-def translate_annotations(directory, width=None, height=None, no_cals=False):
+def translate_annotations(directory, width=None, height=None, no_cals=False, add_cross_sections=False):
     os.makedirs(os.path.join(directory, "labels"), exist_ok=True)
     tmp = pathlib.Path(directory)
     for p in tqdm(list(tmp.rglob("*.json")), leave=False):
@@ -104,15 +105,23 @@ def translate_annotations(directory, width=None, height=None, no_cals=False):
                 h = abs(v[1][1]-v[0][1])
 
                 outfile.write(f"{cl} {x/width} {y/height} {w/width} {h/height}\n")
+            
+            if(add_cross_sections):
+                cl = 6
+                sz = 17
+                cs = get_cross_sections(p,sz, W=width, H=height)
+                for p in  cs:
+                    outfile.write(f"{cl} {p[0]/width} {p[1]/height} {sz/width} {sz/height}\n")
 
 if __name__ == "__main__":
 
     import argparse
 
     parser = argparse.ArgumentParser(description='Generate a realistic random darts dataset.')
-    parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destinataion directory")
+    parser.add_argument("-d", "--directory", type=str, default="_GENERATED", help="Destination directory")
     parser.add_argument('--revert', default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('--no_cals', default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('--cross_sections', default=False, action=argparse.BooleanOptionalAction)
     parser.set_defaults(revert=False)
 
     args = parser.parse_args()
@@ -131,7 +140,7 @@ if __name__ == "__main__":
         validation_ratio = 0.1
         test_ratio = 0.05
         reorganize_images_data(directory,validation_ratio, test_ratio)
-        translate_annotations(directory, width=None, height=None, no_cals=args.no_cals)
+        translate_annotations(directory, width=None, height=None, no_cals=args.no_cals, add_cross_sections=args.cross_sections)
         with open(os.path.join(directory,"data.yml"),"w") as outfile:
             #outfile.write(f"path: {directory}\n")
             outfile.write(f"train: images/train\n")
@@ -148,6 +157,7 @@ if __name__ == "__main__":
                 outfile.write(f" 3: cal3\n")
                 outfile.write(f" 4: cal4\n")
                 outfile.write(f" 5: dart\n")
+                outfile.write(f" 6: cross\n")
             else:
                 outfile.write(f" 1: dart\n")
 

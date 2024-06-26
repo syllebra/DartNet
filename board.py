@@ -24,7 +24,7 @@ class Board():
         if(not os.path.exists(self.metadata_path)):
             self.metadata_path = None
         else:
-            self.image_path = self.metadata_path.replace(".json",".jpg")
+            self.image_path = str(self.metadata_path).replace(".json",".jpg")
             if(not os.path.exists(self.image_path)):
                 self.image_path = None
 
@@ -53,8 +53,14 @@ class Board():
         self.set_metadata(metadata)
 
     def set_metadata(self, metadata):
-        for k,v in metadata["board"].items():
-            setattr(self, k, v)
+        if("board_file" in  metadata):
+            with open(metadata["board_file"],"r") as bf:
+                md = json.load(bf)
+                for k,v in md["board"].items():
+                    setattr(self, k, v)
+        else:
+            for k,v in metadata["board"].items():
+                setattr(self, k, v)
 
         for i, p in enumerate([metadata["kc"][k] for k in ["cal1","cal2","cal3","cal4"]]):
             self.image_cal_pts[i,:] = p
