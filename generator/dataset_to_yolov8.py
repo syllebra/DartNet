@@ -80,31 +80,33 @@ def translate_annotations(directory, width=None, height=None, no_cals=False, add
         
         sz = 17 / 480
         with open(pdata,"w") as outfile:
-            for k,v in data["kc"].items():
-                if("dart" in k.lower()):
-                    cl = 0
-                elif ("cal" in k.lower()):
-                    cl = int(k.replace("cal","").strip())
-                if(not no_cals or cl <1):
-                    if(v[0]>=0 and v[0]<width and v[1]>0 and v[1]<height):
-                        outfile.write(f"{cl} {v[0]/width} {v[1]/height} {sz} {sz}\n")
-            for k,v in data["bbox"].items():
-                if("dart" in k.lower()):
-                    cl = 1 if no_cals else 5
+            if("kc" in data):
+                for k,v in data["kc"].items():
+                    if("dart" in k.lower()):
+                        cl = 0
+                    elif ("cal" in k.lower()):
+                        cl = int(k.replace("cal","").strip())
+                    if(not no_cals or cl <1):
+                        if(v[0]>=0 and v[0]<width and v[1]>0 and v[1]<height):
+                            outfile.write(f"{cl} {v[0]/width} {v[1]/height} {sz} {sz}\n")
+            if("bbox" in data):
+                for k,v in data["bbox"].items():
+                    if("dart" in k.lower()):
+                        cl = 1 if no_cals else 5
 
-                if(v[0][0] <0 and v[1][0] <0): continue
-                if(v[0][0] >=width and v[1][0] >=width): continue
-                if(v[0][1] <0 and v[1][1] <0): continue
-                if(v[0][1] >=height and v[1][1] >=height): continue
+                    if(v[0][0] <0 and v[1][0] <0): continue
+                    if(v[0][0] >=width and v[1][0] >=width): continue
+                    if(v[0][1] <0 and v[1][1] <0): continue
+                    if(v[0][1] >=height and v[1][1] >=height): continue
 
-                v[0] = np.clip(np.array(v[0]),(0,0),(width-1,height-1))
-                v[1] = np.clip(np.array(v[1]),(0,0),(width-1,height-1))
-                x = (v[0][0]+v[1][0])*0.5
-                y = (v[0][1]+v[1][1])*0.5
-                w = abs(v[1][0]-v[0][0])
-                h = abs(v[1][1]-v[0][1])
+                    v[0] = np.clip(np.array(v[0]),(0,0),(width-1,height-1))
+                    v[1] = np.clip(np.array(v[1]),(0,0),(width-1,height-1))
+                    x = (v[0][0]+v[1][0])*0.5
+                    y = (v[0][1]+v[1][1])*0.5
+                    w = abs(v[1][0]-v[0][0])
+                    h = abs(v[1][1]-v[0][1])
 
-                outfile.write(f"{cl} {x/width} {y/height} {w/width} {h/height}\n")
+                    outfile.write(f"{cl} {x/width} {y/height} {w/width} {h/height}\n")
             
             if(add_cross_sections):
                 cl = 6
