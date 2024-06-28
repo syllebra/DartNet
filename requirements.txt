@@ -8,5 +8,6 @@ PyYAML
 scipy
 tqdm
 yacs
+scikit-learn
 pywin32
 playsound==1.2.2
