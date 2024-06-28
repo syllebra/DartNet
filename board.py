@@ -69,6 +69,14 @@ class Board():
         cos_rad = np.cos(np.deg2rad(9))
         self.board_cal_pts = np.array([[- sin_rad, - cos_rad],[  sin_rad,   cos_rad],[- cos_rad,   sin_rad],[  cos_rad, - sin_rad]]).astype(np.float32) * self.r_double 
 
+    def get_cross_sections_pts(self):
+        pts = []
+        for a in range(-9,342, 18):
+            a = np.deg2rad(a)
+            pts.extend([[np.cos(a)*d, np.sin(a)*d] for d in [self.r_double, self.r_double - self.w_double_treble,
+                                self.r_treble, self.r_treble - self.w_double_treble]])#, board.r_outer_bull]])
+        return np.array(pts)
+
     def transform_cals(self, M, image_space=False):
         xy = np.array(self.image_cal_pts if image_space else self.board_cal_pts).astype(np.float32)
         return transform_points(xy, M)
@@ -112,9 +120,9 @@ class Board():
                         scores[i] = int(s)
         return scores
 
-    def draw(self, img, calib_pts, color):
+    def draw(self, img, calib_pts, color=(200,180,60), cal_cols=(0,200,255)):
         for p in calib_pts:
-            cv2.circle(img, p.astype(np.int32),4,color,cv2.FILLED)
+            cv2.circle(img, p.astype(np.int32),8,cal_cols,2)
 
         M = cv2.getPerspectiveTransform(np.array(self.board_cal_pts).astype(np.float32), np.array(calib_pts).astype(np.float32))
         center = transform_points([[0,0]],M)[0].astype(np.int32)
