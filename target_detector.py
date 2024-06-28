@@ -13,11 +13,12 @@ from functools import wraps
 
 from gen_ransac import *
 
+from sklearn.neighbors import NearestNeighbors
+
 
 from ultralytics import YOLO
-print("Load general model...")
-model = YOLO("best_s_tip_boxes_cross_640.pt")
 
+from icp import icp
 
 def timeit(func):
     @wraps(func)
@@ -31,26 +32,6 @@ def timeit(func):
     return timeit_wrapper
 
 
-
-
-@timeit
-def infer(img, mod = None):
-    if(mod is None):
-        mod = model
-    results = mod(img, stream=True, max_det=100, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
-
-    res = []
-    for r in results:
-        for box in r.boxes:
-            x1, y1, x2, y2 = box.xyxy[0]
-
-            # confidence
-            confidence = math.ceil((box.conf[0]*100))/100
-
-            # class name
-            cls = int(box.cls[0])
-            res.append({"x1":x1, "y1":y1,"x2":x2, "y2":y2, "conf":confidence, "cls": cls})
-    return res
 
 
 def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30)], filter=None, status = "not_detected", force_draw_all = False):
@@ -129,7 +110,7 @@ def four_point_transform(image, rect):
 		[maxWidth - 1, maxHeight - 1],
 		[0, maxHeight - 1]], dtype = "float32")
 	# compute the perspective transform matrix and then apply it
-	M = cv2.getPerspectiveTransform(rect, dst)
+	M = cv2.getPerspectiveTransform(rect, dst), cv2.RANSAC
 	warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
 	# return the warped image
 	return warped
@@ -248,14 +229,19 @@ class FixedCenterCircleBoardModel(Model):
 # exit(0)
 
 MIN_MATCH_COUNT = 10
-class TargetDetector():
-    def __init__(self, board_img_path) -> None:
-        self.board = Board(board_img_path.replace(".jpg",".json"))
-        self.img1 = cv2.imread(board_img_path, cv2.IMREAD_GRAYSCALE) # queryImage
+class SiftTargetDetector():
+    def __init__(self, img, board = None) -> None:
+        if isinstance(img, str):
+            self.img1 = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
+            self.board = Board(img.replace(".jpg",".json")) if board is None else board
+        else:
+            self.img1 = img.copy()
+            self.board = board
+        
         self.sift = cv2.SIFT_create(500)
         # find the keypoints and descriptors with SIFT
         self.kp1, self.des1 = self.sift.detectAndCompute(self.img1,None)
-        # print( len(self.kp1), len(self.des1))
+        print( self.kp1[0], self.des1[0])
 
 
     def match(self, img2, compute_inverse=False):
@@ -272,7 +258,7 @@ class TargetDetector():
             return None, 0, Mi
         
         FLANN_INDEX_KDTREE = 1
-        index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 2)
+        index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
         search_params = dict(checks = 50)
         
         flann = cv2.FlannBasedMatcher(index_params, search_params)
@@ -316,6 +302,200 @@ class TargetDetector():
 
         return tr_xy, M, conf
 
+
+class PerspectiveBoardFit(Model):
+    def __init__(self, src, dst, min_dist = 5) -> None:
+        super().__init__()
+        self.N = 4
+        self.M = None
+        #self.Mi = None
+        self.src = src
+        self.dst = dst
+
+    def build(self, pairs) -> None:
+        src = np.array(self.src[pairs[:,0]]).astype(np.float32)
+        dst = np.array(self.dst[pairs[:,1]]).astype(np.float32)
+        self.M = cv2.getPerspectiveTransform(src,dst)
+        return self.M
+    
+    def calc_errors(self, pairs):
+        proj = transform_points(self.src, self.M)
+        nbrs = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(proj)
+
+        distances, indices = nbrs.kneighbors(self.dst)
+        #print("src:", len(self.src)," dst:", len(self.dst), " pairs:", len(pairs)," indices:",len(indices)," max index:",np.max(indices)," distances:",len(distances))
+        
+        for i, id in enumerate(indices):
+            num_corr = np.count_nonzero(indices==id)
+            if(num_corr!=1):
+                distances[i] = 10000
+        # for nn_index in range(len(distances)):
+        #     if distances[nn_index][0] < distance_threshold:        
+        #print(len(distances))
+        return distances
+
+        # rads = np.linalg.norm(pairs_id-self.center, axis=-1)
+        # off = np.where(rads<self.min_dist)
+        # ratio = self.radius/self.radii[0]
+
+        # tmp= np.tile(rads,(self.radii.shape[0],1)).T
+        
+        # min_d = np.min(np.abs(tmp-(self.radii*ratio)), axis = -1) # diff to closest radii
+        # min_d[off] = 100000
+        # return min_d
+    
+class YoloTargetDetector():
+    def __init__(self, board, model_path="best_s_tip_boxes_cross_640.pt") -> None:
+        print("Load general model...")
+        self.model = YOLO(model_path)
+        self.board = Board("dummy")
+        if(board is not None):
+            self.board = board if isinstance(board, Board) else Board(board.replace(".jpg",".json"))
+        
+        self.pts = self.board.get_cross_sections_pts()
+        
+        # img = self.build_img(pts,(512,512))
+        # self.sift = SiftTargetDetector(img, self.board)
+        # print( len(self.sift.kp1), len(self.sift.des1))
+        # cv2.imshow("src", self.sift.img1)
+
+    def build_img(self, pts, size=(512,512)):
+        img = np.zeros(size, np.uint8)
+        for p in pts.astype(np.int32):
+            cv2.circle(img,p,3,255,-1,cv2.LINE_AA)
+        return img
+
+    def infer(self, img):
+        results = self.model(img, stream=True, max_det=100, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
+
+        res = []
+        for r in results:
+            for box in r.boxes:
+                x1, y1, x2, y2 = box.xyxy[0]
+
+                # confidence
+                confidence = math.ceil((box.conf[0]*100))/100
+
+                # class name
+                cls = int(box.cls[0])
+                if(cls == 6):
+                    res.append([(x1+x2)*0.5, (y1+y2)*0.5])
+        return np.array(res)
+
+    def detect(self, img, refine_pts=True, dbg = None):
+        # Step 1: Infer using trained model to find board intersections
+        corners = self.infer(img)
+
+        if(dbg is not None):
+            for p in corners.astype(np.int32):
+                cv2.circle(dbg,p,3,(255,255,0),1,cv2.LINE_AA)
+    
+
+        # Step 2: Coarse initialisation using rough center/scale
+        orig= (self.pts/ self.board.r_board)
+        center = np.mean(corners, axis=0)
+        cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
+        scale = np.max(abs(corners-center),axis=0)
+        pts = orig * scale *1.2 + center
+        print(scale)
+
+        # Step 3: Iteratice closest poitn algorithm to find some matching pairs
+        transformation_history, aligned_points, closest_point_pairs = icp(pts, corners,distance_threshold=15,point_pairs_threshold=10, verbose=False)
+        print("Pairs:",len(closest_point_pairs))
+        # for p in aligned_points.astype(np.int32):
+        #     cv2.drawMarker(dbg,p,(255,0,255),cv2.MARKER_TILTED_CROSS, 20)
+        # for p in pts.astype(np.int32):
+        #     cv2.drawMarker(dbg,p,(0,255,255),cv2.MARKER_TILTED_CROSS, 20)
+            
+        for [a,b] in closest_point_pairs:
+            # cv2.drawMarker(dbg,pts[a].astype(np.int32),(0,255,0),cv2.MARKER_TILTED_CROSS, 20,1, cv2.LINE_AA)
+            # cv2.line(dbg,pts[a].astype(np.int32), corners[b].astype(np.int32),(0,0,255),1, cv2.LINE_AA)
+            cv2.circle(dbg,corners[b].astype(np.int32),2,(0,255,255),-1,cv2.LINE_AA)
+
+        # Step 4: First ransac fitting to find reasonable target pose
+        M = ransac_fit(PerspectiveBoardFit(self.pts,corners), np.array(closest_point_pairs,np.int32), success_probabilities=0.99, outliers_ratio=0.6, inliers_thres=5)
+        if(M is None):
+            print("Error")
+            return None, None, 0
+
+        tr_xy = self.board.transform_cals(M,False)
+        if(len(tr_xy)<4):
+            return None, None, 0
+
+        if(dbg is not None):
+            self.board.draw(dbg, tr_xy, color=(150,130,30),cal_cols=(0,150,200))
+
+        # Step 5: match 4 calibrations points to refine pose
+        nbrs = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(corners)
+        distances, indices = nbrs.kneighbors(tr_xy)
+        for i,d in enumerate(distances):
+            if(d<10):
+                tr_xy[i] = corners[indices[i]][0]
+        
+        M, mask = cv2.findHomography(self.board.board_cal_pts, tr_xy, cv2.RANSAC, 5)
+        
+        # Step 6: Second ransac fitting using more correspondence pair for finer fit
+        projected = transform_points(self.pts,M)
+        distances, indices = nbrs.kneighbors(projected)
+        valid_pairs = []
+        for i,d in enumerate(distances):
+            if(d<10):
+                #tr_xy[i] = corners[indices[i]]
+                print( corners[indices[i]].shape)
+                cv2.line(dbg,projected[i].astype(np.int32), corners[indices[i]][0].astype(np.int32),(0,0,255),2, cv2.LINE_AA)
+                valid_pairs.append([i,indices[i][0]])
+        valid_pairs = np.array(valid_pairs,np.int32)
+        M = ransac_fit(PerspectiveBoardFit(self.pts,corners), valid_pairs, success_probabilities=0.99, outliers_ratio=0.4, inliers_thres=2.5)
+        if(M is None):
+            print("Error")
+            return None, None, 0
+
+        tr_xy = self.board.transform_cals(M,False)
+        if(len(tr_xy)<4):
+            return None, None, 0
+
+        # Step 7: Use camera distortion for even finer result on some cameras
+        # https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
+        cameraMatrixInit = np.array([[ 2000.,    0., img.shape[1]/2.],
+                                 [    0., 2000., img.shape[0]/2.],
+                                 [    0.,    0.,           1.]])
+
+        def _2d_to_3d_vec(pts):
+            ret = np.zeros((pts.shape[0],3))
+            ret[:,:-1] = pts
+            return ret.astype(np.float32)
+
+        distCoeffsInit = np.zeros((5,1))
+        flags = (cv2.CALIB_USE_INTRINSIC_GUESS + cv2.CALIB_RATIONAL_MODEL)
+        criteria=(cv2.TERM_CRITERIA_EPS & cv2.TERM_CRITERIA_COUNT, 10000, 1e-9)
+        model = _2d_to_3d_vec(self.pts[valid_pairs[:,0]])
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(np.array([model]).astype(np.float32), np.array([corners[valid_pairs[:,1]]]).astype(np.float32), (img.shape[1],img.shape[0]),
+                                                           cameraMatrixInit, distCoeffsInit, flags=flags, criteria = criteria)
+
+        # transform the matrix and distortion coefficients to writable lists
+        data = {'reprojection_error':ret, 'camera_matrix': np.asarray(mtx).tolist(),
+                'dist_coeff': np.asarray(dist).tolist()}
+        
+        
+        # We can take in distortion image and return the undistorted image with the help of distortion coefficient and the camera matrix.
+        #dst = cv2.undistort(img, mtx, dist, None, mtx)
+        mapx, mapy = cv2.initUndistortRectifyMap(mtx, dist, None, mtx, (img.shape[1],img.shape[0]), 5)
+        dst = cv2.remap(img, mapx, mapy, cv2.INTER_LINEAR)
+        #imgpoints2, _ = cv2.projectPoints(model, rvecs[0], tvecs[0], mtx, dist)
+        #undist = cv2.undistortImagePoints(np.array([transform_points(self.pts,M)]).astype(np.float32),mtx,dist)
+        undist = cv2.undistortImagePoints(np.array([transform_points(self.board.board_cal_pts,M)]).astype(np.float32),mtx,dist)
+        for p in undist.astype(np.int32):
+            cv2.circle(dst, p[0], 4, (255,120,60),1, cv2.LINE_AA)
+        undist = [u[0] for u in undist]
+        self.board.draw(dst, undist) 
+        cv2.imshow("undistort",dst)
+        
+
+        print(data)
+
+        if(dbg is not None):
+            self.board.draw(dbg, tr_xy)
+        return tr_xy, M, 0
 
 
 def createLineIterator(P1, P2, img):
@@ -436,6 +616,8 @@ if __name__ == "__main__":
     dir = 'datasets/real/target_detector_test'
     #dir = r'generator\_GENERATED'
     tests = [os.path.join(dir,f) for f in os.listdir(dir) if ".jpg" in f or ".png" in f]
+
+    detector = YoloTargetDetector(None)
 
     for path in tests:
         board_path = path.replace(".jpg",".json") if ".jpg" in path  else path.replace(".png",".json")
@@ -1403,12 +1585,27 @@ if __name__ == "__main__":
         # detector_distortion_test(img)
             
         def detector_yolo(img):
-            res = infer(img, model)
+            detector.board = board
+            dbg = img.copy()
+            found_cals, M, conf = detector.detect(img, False, dbg)
+            res = []
+            if(M is not None):
+                pts_cal = found_cals
+                for i,p in enumerate(pts_cal):
+                    v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':0.9, "cls":i+1}
+                    res.append(v)
+                    print(v)
+
             draw(img, res, force_draw_all=True)
+            color_tgt = (200,180,60)
+            board.draw(img, found_cals, color_tgt)
             cv2.imshow("Img", img)
+            cv2.imshow("Dbg", dbg)
+            
 
-        detector_yolo(img)
+        for i in range(3):
+            detector_yolo(img.copy())
 
-        key = cv2.waitKey(0)
-        if(key == ord('q')):
-            break
+            key = cv2.waitKey(0)
+            if(key == ord('q')):
+                exit(0)

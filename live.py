@@ -6,7 +6,7 @@ from generator.annotate import seg_intersect
 import time
 import os
 import json
-from target_detector import TargetDetector
+from target_detector import SiftTargetDetector
 from board import Board, transform_points
 from videocapture import ScreenVideoCapture
 import playsound
@@ -33,7 +33,7 @@ print("Load board data...")
 board = Board(board_img_path.replace(".jpg",".json"))
 
 print("Initialize OpenCV SIFT detector...")
-detector = TargetDetector(board_img_path)
+detector = SiftTargetDetector(board_img_path)
 
 status_colors = {"not_detected": (0,0,255), "detected": (0,255,0), "opencv_detected": (0,160,75), "locked":(160,160)}
 
