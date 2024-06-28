@@ -219,6 +219,7 @@ def ransac_fit(model: Model, pnts, success_probabilities=0.98, outliers_ratio = 
 
     best_model_pts_ids = None
     best_n_inliers = 0
+    best_inliers_error = np.inf
 
     n_pnts = len(pnts)
       
@@ -257,5 +258,11 @@ def ransac_fit(model: Model, pnts, success_probabilities=0.98, outliers_ratio = 
         if(n_inliers> best_n_inliers):
             best_n_inliers = n_inliers
             best_model_pts_ids = pnts_id
+            best_inliers_error = np.mean(errors[inliers])
+        elif(n_inliers == best_n_inliers):
+            mean_err = np.mean(errors[inliers])
+            if(mean_err < best_inliers_error):
+                best_inliers_error = mean_err
+                best_model_pts_ids = pnts_id
 
     return model.build(pnts[best_model_pts_ids])
