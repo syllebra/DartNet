@@ -15,12 +15,7 @@ def get_cross_sections(json_path, sz=20, W=640, H=640, dbg = None):
 
     M, mask = cv2.findHomography(board.board_cal_pts, xy_cal, cv2.RANSAC,5.0)
     
-    pts = []
-    for a in range(-9,342, 18):
-        a = np.deg2rad(a)
-
-        pts.extend([[np.cos(a)*d, np.sin(a)*d] for d in [board.r_double, board.r_double - board.w_double_treble,
-                            board.r_treble, board.r_treble - board.w_double_treble]])#, board.r_outer_bull]])
+    pts = board.get_cross_sections_pts()
 
     pts_img = transform_points(pts, M)
 
