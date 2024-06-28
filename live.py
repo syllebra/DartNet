@@ -6,7 +6,7 @@ from generator.annotate import seg_intersect
 import time
 import os
 import json
-from target_detector import SiftTargetDetector
+from target_detector import YoloTargetDetector
 from board import Board, transform_points
 from videocapture import ScreenVideoCapture
 import playsound
@@ -32,8 +32,10 @@ board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 print("Load board data...")
 board = Board(board_img_path.replace(".jpg",".json"))
 
-print("Initialize OpenCV SIFT detector...")
-detector = SiftTargetDetector(board_img_path)
+# print("Initialize OpenCV SIFT detector...")
+# detector = SiftTargetDetector(board_img_path)
+print("Initialize OpenCV YOLO detector...")
+detector = YoloTargetDetector(board_img_path)
 
 status_colors = {"not_detected": (0,0,255), "detected": (0,255,0), "opencv_detected": (0,160,75), "locked":(160,160)}
 
@@ -53,7 +55,7 @@ temporal_model = YOLO("best_temporal_A.pt")
 
 #model = YOLO("last.pt")
 model_train_size = 640
-force_opencv_detector = False
+force_opencv_detector = True
 use_clahe = False
 temporal_detection = True
 temporal_filter = 200 # ms to wait to validate (try to filter dart in flight, not yet landed) TODO: flight detection?
@@ -218,6 +220,93 @@ print("Initializing models...")
 infer(np.zeros((model_train_size,model_train_size,3)), model)
 infer(np.zeros((model_train_size,model_train_size,3)), temporal_model)
 
+def auto_crop(pts_cal):
+    center = seg_intersect(pts_cal[0],pts_cal[1],pts_cal[2],pts_cal[3])
+    x1 = int(center[0]-12)
+    y1 = int(center[1]-12)
+    x2 = int(center[0]+12)
+    y2 = int(center[1]+12)
+    cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
+    mode = 0
+    if(mode == 0):
+        dis = (pts_cal-center) * 1.35
+        max = np.max(np.abs(dis))
+        # print(center)
+        # print(max)
+        crop = [int(np.clip(center[0]-max,0,width)),
+                int(np.clip(center[1]-max,0,height)),
+                int(np.clip(center[0]+max,0,width)),
+                int(np.clip(center[1]+max,0,height))]
+        
+        # sm = (img[crop[1]:crop[3],crop[0]:crop[2],:])
+        # ratio = model_train_size/np.max(img.shape)
+        # sm= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
+        # cv2.imshow("sm",sm)
+        # r2 = infer(sm)
+        # pts_cal_dst = find_cal_pts(r2)
+        # print("FOUND DST CAL:",pts_cal_dst)
+    return crop
+
+def crop_img(img, crop, use_clahe = False):
+    img = (img[crop[1]:crop[3],crop[0]:crop[2],:])
+    ratio = model_train_size/np.max(img.shape)
+    img= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
+    #img = clahe.apply(img)
+    if(use_clahe):
+        img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+        img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
+        img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+    return img
+
+print("Initial fit on first capture...")
+pts_cal = None
+success, img = cap.read()
+key = -1
+res = []
+test = img.copy()
+manual_rot = 0
+pts_cal, M, conf = detector.detect(test,dbg=test)
+if(pts_cal is not None):
+    crop = auto_crop(pts_cal)
+    img = crop_img(img, crop, use_clahe=use_clahe)
+while True:
+    test = img.copy()
+    pts_cal, M, conf = detector.detect(img,dbg=test)
+
+    if(M is not None and manual_rot is not None):
+        Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
+        R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
+        R[:-1,:] = Rt
+        print(R)
+        tmp  = board.transform_cals(R)
+        pts_cal = transform_points(tmp, M)
+        test = img.copy()
+        board.draw(test,pts_cal)
+
+    cv2.imshow("Inital Calib", test)
+    key = cv2.waitKey(0)
+    if(key==ord('q')):
+        exit(0)
+    elif(key==ord('s')):
+        break
+    elif(key==ord('r')):
+        pts_cal = None
+        break
+    elif(key==ord('o')):
+        manual_rot += 18
+    elif(key==ord('p')):
+        manual_rot -= 18
+
+if(pts_cal is not None):
+    locked = True
+    last_cal_pts = pts_cal
+    for i,p in enumerate(pts_cal):
+        v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':conf, "cls":i+1}
+        res.append(v)    
+    opencv_detected = True
+
+
+
 print("Starting main loop...")
 ts = time.time()
 last = None
@@ -233,18 +322,9 @@ while True:
     ratio = None
     cropped = False
     if(crop is not None):
-        img = (img[crop[1]:crop[3],crop[0]:crop[2],:])
-        ratio = model_train_size/np.max(img.shape)
-        img= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
-        #img = clahe.apply(img)
-        if(use_clahe):
-            img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
-            img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
-            img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
-
+        img = crop_img(img, crop, use_clahe=use_clahe)
         cropped = True
 
-    pts_cal = None
     if(locked):
         pts_cal = last_cal_pts
     else:
@@ -254,7 +334,9 @@ while True:
         opencv_detected = False
         if(not locked and (force_opencv_detector or pts_cal is None)):
             tps = time.time()
-            found_cals, M, conf = detector.detect(img, refine_pts=True)
+            detect_dbg = img.copy()
+            found_cals, M, conf = detector.detect(img, refine_pts=True, dbg = detect_dbg)
+            cv2.imshow("Detection Debug", detect_dbg)
             if(M is not None):
                 pts_cal = found_cals
                 for i,p in enumerate(pts_cal):
@@ -334,39 +416,8 @@ while True:
         last_cal_pts = pts_cal
 
     # First crop resize after initial detection
-    if(pts_cal is not None):
-        if(crop is None):
-            center = seg_intersect(pts_cal[0],pts_cal[1],pts_cal[2],pts_cal[3])
-            x1 = int(center[0]-12)
-            y1 = int(center[1]-12)
-            x2 = int(center[0]+12)
-            y2 = int(center[1]+12)
-            cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
-            mode = 0
-            if(mode == 0):
-                dis = (pts_cal-center) * 1.35
-                max = np.max(np.abs(dis))
-                # print(center)
-                # print(max)
-                crop = [int(np.clip(center[0]-max,0,width)),
-                        int(np.clip(center[1]-max,0,height)),
-                        int(np.clip(center[0]+max,0,width)),
-                        int(np.clip(center[1]+max,0,height))]
-                
-                # sm = (img[crop[1]:crop[3],crop[0]:crop[2],:])
-                # ratio = model_train_size/np.max(img.shape)
-                # sm= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
-                # cv2.imshow("sm",sm)
-                # r2 = infer(sm)
-                # pts_cal_dst = find_cal_pts(r2)
-                # print("FOUND DST CAL:",pts_cal_dst)
-
-
-            # elif(mode==1):
-            #     outer = center +(pts_cal-center) * 1.3
-    # else:
-    #     crop = None
-    #     cropped = False
+    if(pts_cal is not None and crop is None):
+        crop = auto_crop(pts_cal)
 
     
     status = "not_detected"
