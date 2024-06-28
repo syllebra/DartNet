@@ -302,7 +302,6 @@ class SiftTargetDetector():
 
         return tr_xy, M, conf
 
-
 class PerspectiveBoardFit(Model):
     def __init__(self, src, dst, min_dist = 5) -> None:
         super().__init__()
@@ -345,7 +344,7 @@ class PerspectiveBoardFit(Model):
         # return min_d
     
 class YoloTargetDetector():
-    def __init__(self, board, model_path="best_s_tip_boxes_cross_640.pt") -> None:
+    def __init__(self, board, model_path="best_s_tip_boxes_cross_640.pt", auto_am_calib=False) -> None:
         print("Load general model...")
         self.model = YOLO(model_path)
         self.board = Board("dummy")
@@ -353,6 +352,7 @@ class YoloTargetDetector():
             self.board = board if isinstance(board, Board) else Board(board.replace(".jpg",".json"))
         
         self.pts = self.board.get_cross_sections_pts()
+        self.auto_am_calib = auto_am_calib
         
         # img = self.build_img(pts,(512,512))
         # self.sift = SiftTargetDetector(img, self.board)
@@ -397,7 +397,6 @@ class YoloTargetDetector():
         cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
         scale = np.max(abs(corners-center),axis=0)
         pts = orig * scale *1.2 + center
-        print(scale)
 
         # Step 3: Iteratice closest poitn algorithm to find some matching pairs
         transformation_history, aligned_points, closest_point_pairs = icp(pts, corners,distance_threshold=15,point_pairs_threshold=10, verbose=False)
@@ -427,12 +426,12 @@ class YoloTargetDetector():
 
         # Step 5: match 4 calibrations points to refine pose
         nbrs = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(corners)
-        distances, indices = nbrs.kneighbors(tr_xy)
-        for i,d in enumerate(distances):
-            if(d<10):
-                tr_xy[i] = corners[indices[i]][0]
+        # distances, indices = nbrs.kneighbors(tr_xy)
+        # for i,d in enumerate(distances):
+        #     if(d<10):
+        #         tr_xy[i] = corners[indices[i]][0]
         
-        M, mask = cv2.findHomography(self.board.board_cal_pts, tr_xy, cv2.RANSAC, 5)
+        # M, mask = cv2.findHomography(self.board.board_cal_pts, tr_xy, cv2.RANSAC, 5)
         
         # Step 6: Second ransac fitting using more correspondence pair for finer fit
         projected = transform_points(self.pts,M)
@@ -440,8 +439,7 @@ class YoloTargetDetector():
         valid_pairs = []
         for i,d in enumerate(distances):
             if(d<10):
-                #tr_xy[i] = corners[indices[i]]
-                print( corners[indices[i]].shape)
+                # print( corners[indices[i]].shape)
                 cv2.line(dbg,projected[i].astype(np.int32), corners[indices[i]][0].astype(np.int32),(0,0,255),2, cv2.LINE_AA)
                 valid_pairs.append([i,indices[i][0]])
         valid_pairs = np.array(valid_pairs,np.int32)
@@ -456,42 +454,41 @@ class YoloTargetDetector():
 
         # Step 7: Use camera distortion for even finer result on some cameras
         # https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
-        cameraMatrixInit = np.array([[ 2000.,    0., img.shape[1]/2.],
-                                 [    0., 2000., img.shape[0]/2.],
-                                 [    0.,    0.,           1.]])
+        if(self.auto_am_calib):
+            cameraMatrixInit = np.array([[ 2000.,    0., img.shape[1]/2.],
+                                    [    0., 2000., img.shape[0]/2.],
+                                    [    0.,    0.,           1.]])
 
-        def _2d_to_3d_vec(pts):
-            ret = np.zeros((pts.shape[0],3))
-            ret[:,:-1] = pts
-            return ret.astype(np.float32)
+            def _2d_to_3d_vec(pts):
+                ret = np.zeros((pts.shape[0],3))
+                ret[:,:-1] = pts
+                return ret.astype(np.float32)
 
-        distCoeffsInit = np.zeros((5,1))
-        flags = (cv2.CALIB_USE_INTRINSIC_GUESS + cv2.CALIB_RATIONAL_MODEL)
-        criteria=(cv2.TERM_CRITERIA_EPS & cv2.TERM_CRITERIA_COUNT, 10000, 1e-9)
-        model = _2d_to_3d_vec(self.pts[valid_pairs[:,0]])
-        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(np.array([model]).astype(np.float32), np.array([corners[valid_pairs[:,1]]]).astype(np.float32), (img.shape[1],img.shape[0]),
-                                                           cameraMatrixInit, distCoeffsInit, flags=flags, criteria = criteria)
+            distCoeffsInit = np.zeros((5,1))
+            flags = (cv2.CALIB_USE_INTRINSIC_GUESS + cv2.CALIB_RATIONAL_MODEL)
+            criteria=(cv2.TERM_CRITERIA_EPS & cv2.TERM_CRITERIA_COUNT, 10000, 1e-9)
+            model = _2d_to_3d_vec(self.pts[valid_pairs[:,0]])
+            ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(np.array([model]).astype(np.float32), np.array([corners[valid_pairs[:,1]]]).astype(np.float32), (img.shape[1],img.shape[0]),
+                                                            cameraMatrixInit, distCoeffsInit, flags=flags, criteria = criteria)
 
-        # transform the matrix and distortion coefficients to writable lists
-        data = {'reprojection_error':ret, 'camera_matrix': np.asarray(mtx).tolist(),
-                'dist_coeff': np.asarray(dist).tolist()}
-        
-        
-        # We can take in distortion image and return the undistorted image with the help of distortion coefficient and the camera matrix.
-        #dst = cv2.undistort(img, mtx, dist, None, mtx)
-        mapx, mapy = cv2.initUndistortRectifyMap(mtx, dist, None, mtx, (img.shape[1],img.shape[0]), 5)
-        dst = cv2.remap(img, mapx, mapy, cv2.INTER_LINEAR)
-        #imgpoints2, _ = cv2.projectPoints(model, rvecs[0], tvecs[0], mtx, dist)
-        #undist = cv2.undistortImagePoints(np.array([transform_points(self.pts,M)]).astype(np.float32),mtx,dist)
-        undist = cv2.undistortImagePoints(np.array([transform_points(self.board.board_cal_pts,M)]).astype(np.float32),mtx,dist)
-        for p in undist.astype(np.int32):
-            cv2.circle(dst, p[0], 4, (255,120,60),1, cv2.LINE_AA)
-        undist = [u[0] for u in undist]
-        self.board.draw(dst, undist) 
-        cv2.imshow("undistort",dst)
-        
+            # transform the matrix and distortion coefficients to writable lists
+            data = {'reprojection_error':ret, 'camera_matrix': np.asarray(mtx).tolist(),
+                    'dist_coeff': np.asarray(dist).tolist()}
+            
+            
+            # We can take in distortion image and return the undistorted image with the help of distortion coefficient and the camera matrix.
+            #dst = cv2.undistort(img, mtx, dist, None, mtx)
+            mapx, mapy = cv2.initUndistortRectifyMap(mtx, dist, None, mtx, (img.shape[1],img.shape[0]), 5)
+            dst = cv2.remap(img, mapx, mapy, cv2.INTER_LINEAR)
+            #imgpoints2, _ = cv2.projectPoints(model, rvecs[0], tvecs[0], mtx, dist)
+            #undist = cv2.undistortImagePoints(np.array([transform_points(self.pts,M)]).astype(np.float32),mtx,dist)
+            undist = cv2.undistortImagePoints(np.array([transform_points(self.board.board_cal_pts,M)]).astype(np.float32),mtx,dist)
+            for p in undist.astype(np.int32):
+                cv2.circle(dst, p[0], 4, (255,120,60),1, cv2.LINE_AA)
+            undist = [u[0] for u in undist]
+            self.board.draw(dst, undist) 
+            cv2.imshow("undistort",dst)
 
-        print(data)
 
         if(dbg is not None):
             self.board.draw(dbg, tr_xy)
