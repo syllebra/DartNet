@@ -351,7 +351,7 @@ class YoloTargetDetector():
         if(board is not None):
             self.board = board if isinstance(board, Board) else Board(board.replace(".jpg",".json"))
         
-        self.pts = self.board.get_cross_sections_pts()
+        self.pts, self.outer_ids = self.board.get_cross_sections_pts()
         self.auto_am_calib = auto_am_calib
         
         # img = self.build_img(pts,(512,512))
@@ -384,6 +384,7 @@ class YoloTargetDetector():
 
     def detect(self, img, refine_pts=True, dbg = None):
         # Step 1: Infer using trained model to find board intersections
+        # -------------
         corners = self.infer(img)
 
         if(dbg is not None):
@@ -392,26 +393,32 @@ class YoloTargetDetector():
     
 
         # Step 2: Coarse initialisation using rough center/scale
+        # -------------
         orig= (self.pts/ self.board.r_board)
         center = np.mean(corners, axis=0)
-        cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
+        # if(dbg is not None):
+        #     cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
         scale = np.max(abs(corners-center),axis=0)
         pts = orig * scale *1.2 + center
 
-        # Step 3: Iteratice closest poitn algorithm to find some matching pairs
+        # Step 3: Iteratice closest point algorithm to find some matching pairs
+        # -------------
         transformation_history, aligned_points, closest_point_pairs = icp(pts, corners,distance_threshold=15,point_pairs_threshold=10, verbose=False)
-        print("Pairs:",len(closest_point_pairs))
+        if(dbg is not None):
+            print("Pairs:",len(closest_point_pairs))
         # for p in aligned_points.astype(np.int32):
         #     cv2.drawMarker(dbg,p,(255,0,255),cv2.MARKER_TILTED_CROSS, 20)
         # for p in pts.astype(np.int32):
         #     cv2.drawMarker(dbg,p,(0,255,255),cv2.MARKER_TILTED_CROSS, 20)
             
-        for [a,b] in closest_point_pairs:
-            # cv2.drawMarker(dbg,pts[a].astype(np.int32),(0,255,0),cv2.MARKER_TILTED_CROSS, 20,1, cv2.LINE_AA)
-            # cv2.line(dbg,pts[a].astype(np.int32), corners[b].astype(np.int32),(0,0,255),1, cv2.LINE_AA)
-            cv2.circle(dbg,corners[b].astype(np.int32),2,(0,255,255),-1,cv2.LINE_AA)
+        if(dbg is not None):
+            for [a,b] in closest_point_pairs:
+                # cv2.drawMarker(dbg,pts[a].astype(np.int32),(0,255,0),cv2.MARKER_TILTED_CROSS, 20,1, cv2.LINE_AA)
+                # cv2.line(dbg,pts[a].astype(np.int32), corners[b].astype(np.int32),(0,0,255),1, cv2.LINE_AA)
+                cv2.circle(dbg,corners[b].astype(np.int32),2,(0,255,255),-1,cv2.LINE_AA)
 
         # Step 4: First ransac fitting to find reasonable target pose
+        # -------------
         M = ransac_fit(PerspectiveBoardFit(self.pts,corners), np.array(closest_point_pairs,np.int32), success_probabilities=0.99, outliers_ratio=0.6, inliers_thres=5)
         if(M is None):
             print("Error")
@@ -421,10 +428,11 @@ class YoloTargetDetector():
         if(len(tr_xy)<4):
             return None, None, 0
 
-        if(dbg is not None):
-            self.board.draw(dbg, tr_xy, color=(150,130,30),cal_cols=(0,150,200))
+        # if(dbg is not None):
+        #     self.board.draw(dbg, tr_xy, color=(150,130,30),cal_cols=(0,150,200))
 
         # Step 5: match 4 calibrations points to refine pose
+        # -------------
         nbrs = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(corners)
         # distances, indices = nbrs.kneighbors(tr_xy)
         # for i,d in enumerate(distances):
@@ -434,16 +442,26 @@ class YoloTargetDetector():
         # M, mask = cv2.findHomography(self.board.board_cal_pts, tr_xy, cv2.RANSAC, 5)
         
         # Step 6: Second ransac fitting using more correspondence pair for finer fit
+        # -------------
         projected = transform_points(self.pts,M)
         distances, indices = nbrs.kneighbors(projected)
         valid_pairs = []
         for i,d in enumerate(distances):
             if(d<10):
                 # print( corners[indices[i]].shape)
-                cv2.line(dbg,projected[i].astype(np.int32), corners[indices[i]][0].astype(np.int32),(0,0,255),2, cv2.LINE_AA)
+                if(dbg is not None):
+                    cv2.line(dbg,projected[i].astype(np.int32), corners[indices[i]][0].astype(np.int32),(0,0,255),2, cv2.LINE_AA)
                 valid_pairs.append([i,indices[i][0]])
+
+        # if(dbg is not None):
+        #     for id in self.outer_ids:
+        #         cv2.circle(dbg,projected[id].astype(np.int32),6,(0,0,255),2,cv2.LINE_AA)
+
+        valid_pairs = [p for p in valid_pairs if p[0] in self.outer_ids] # optimisation for only outer ring pairs
         valid_pairs = np.array(valid_pairs,np.int32)
-        M = ransac_fit(PerspectiveBoardFit(self.pts,corners), valid_pairs, success_probabilities=0.99, outliers_ratio=0.4, inliers_thres=2.5)
+
+
+        M = ransac_fit(PerspectiveBoardFit(self.pts,corners), valid_pairs, success_probabilities=0.999, outliers_ratio=0.5, inliers_thres=1.5)
         if(M is None):
             print("Error")
             return None, None, 0
@@ -454,6 +472,7 @@ class YoloTargetDetector():
 
         # Step 7: Use camera distortion for even finer result on some cameras
         # https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
+        # -------------
         if(self.auto_am_calib):
             cameraMatrixInit = np.array([[ 2000.,    0., img.shape[1]/2.],
                                     [    0., 2000., img.shape[0]/2.],

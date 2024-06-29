@@ -15,7 +15,7 @@ def get_cross_sections(json_path, sz=20, W=640, H=640, dbg = None):
 
     M, mask = cv2.findHomography(board.board_cal_pts, xy_cal, cv2.RANSAC,5.0)
     
-    pts = board.get_cross_sections_pts()
+    pts, _ = board.get_cross_sections_pts()
 
     pts_img = transform_points(pts, M)
 

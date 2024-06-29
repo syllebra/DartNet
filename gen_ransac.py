@@ -248,11 +248,12 @@ def ransac_fit(model: Model, pnts, success_probabilities=0.98, outliers_ratio = 
         # Identify inliers
         inliers = np.nonzero(errors**2 < max_norm_err_sq)[0]
 
-        # Protect ellipse fitting from too few points
-        if inliers.size < model.N:
-            continue
 
         n_inliers = inliers.size
+
+        # Protect fitting from too few points
+        if n_inliers < model.N:
+            continue
 
         # Update best model
         if(n_inliers> best_n_inliers):
