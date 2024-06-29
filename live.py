@@ -18,16 +18,16 @@ MAX_CLASSES = 6
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/unicorn_eclipse_hd2_A.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
-#cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_C.avi")
+cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
 #cap = ScreenVideoCapture(pick=True)
 print("Initilize video capture...")
-cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
-time_mult=.25#0.0001
+#cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
+time_mult=.25#0.0001#
 fps = 21.0
 
-board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
+#board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 #board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
-#board_img_path = 'generator/3D/Boards/winmau_blade_5.jpg'
+board_img_path = 'generator/3D/Boards/winmau_blade_6.jpg'
 
 print("Load board data...")
 board = Board(board_img_path.replace(".jpg",".json"))
@@ -226,7 +226,7 @@ def auto_crop(pts_cal):
     y1 = int(center[1]-12)
     x2 = int(center[0]+12)
     y2 = int(center[1]+12)
-    cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
+    #cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
     mode = 0
     if(mode == 0):
         dis = (pts_cal-center) * 1.35
@@ -258,53 +258,56 @@ def crop_img(img, crop, use_clahe = False):
         img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
     return img
 
-print("Initial fit on first capture...")
 pts_cal = None
-success, img = cap.read()
-key = -1
-res = []
-test = img.copy()
-manual_rot = 0
-pts_cal, M, conf = detector.detect(test,dbg=test)
-if(pts_cal is not None):
-    crop = auto_crop(pts_cal)
-    img = crop_img(img, crop, use_clahe=use_clahe)
-while True:
+perform_simple_interactive_calibration = True
+
+if(perform_simple_interactive_calibration):
+    print("Initial fit on first capture...")
+
+    success, img = cap.read()
+    key = -1
+    res = []
     test = img.copy()
-    pts_cal, M, conf = detector.detect(img,dbg=test)
-
-    if(M is not None and manual_rot is not None):
-        Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
-        R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
-        R[:-1,:] = Rt
-        print(R)
-        tmp  = board.transform_cals(R)
-        pts_cal = transform_points(tmp, M)
+    manual_rot = 0
+    pts_cal, M, conf = detector.detect(test,dbg=test)
+    if(pts_cal is not None):
+        crop = auto_crop(pts_cal)
+        img = crop_img(img, crop, use_clahe=use_clahe)
+    while True:
         test = img.copy()
-        board.draw(test,pts_cal)
+        pts_cal, M, conf = detector.detect(img,dbg=test)
 
-    cv2.imshow("Inital Calib", test)
-    key = cv2.waitKey(0)
-    if(key==ord('q')):
-        exit(0)
-    elif(key==ord('s')):
-        break
-    elif(key==ord('r')):
-        pts_cal = None
-        break
-    elif(key==ord('o')):
-        manual_rot += 18
-    elif(key==ord('p')):
-        manual_rot -= 18
+        if(M is not None and manual_rot is not None):
+            Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
+            R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
+            R[:-1,:] = Rt
+            print(R)
+            tmp  = board.transform_cals(R)
+            pts_cal = transform_points(tmp, M)
+            test = img.copy()
+            board.draw(test,pts_cal)
 
-if(pts_cal is not None):
-    locked = True
-    last_cal_pts = pts_cal
-    for i,p in enumerate(pts_cal):
-        v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':conf, "cls":i+1}
-        res.append(v)    
-    opencv_detected = True
+        cv2.imshow("Inital Calib", test)
+        key = cv2.waitKey(0)
+        if(key==ord('q')):
+            exit(0)
+        elif(key==ord('s')):
+            break
+        elif(key==ord('r')):
+            pts_cal = None
+            break
+        elif(key==ord('o')):
+            manual_rot += 18
+        elif(key==ord('p')):
+            manual_rot -= 18
 
+    if(pts_cal is not None):
+        locked = True
+        last_cal_pts = pts_cal
+        for i,p in enumerate(pts_cal):
+            v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':conf, "cls":i+1}
+            res.append(v)    
+        opencv_detected = True
 
 
 print("Starting main loop...")
@@ -315,7 +318,12 @@ last_dart_time = -1
 
 while True:
     if(time_mult > 0):
-        cap.set(cv2.CAP_PROP_POS_MSEC, (time.time()-ts)*1000*time_mult)
+        try:
+            #cap.set(cv2.CAP_PROP_POS_MSEC, (time.time()-ts)*1000*time_mult)
+            if(not cap.set(cv2.CAP_PROP_POS_FRAMES, (time.time()-ts)*fps*time_mult)):
+                exit(0)
+        except:
+            exit(0)
     success, img = cap.read()
     if(not success):
         continue
