@@ -109,11 +109,16 @@ def translate_annotations(directory, width=None, height=None, no_cals=False, add
                     outfile.write(f"{cl} {x/width} {y/height} {w/width} {h/height}\n")
             
             if(add_cross_sections):
-                cl = 6
                 sz = 17
-                cs = get_cross_sections(p,sz, W=width, H=height)
+                cs, bouter, binner = get_cross_sections(p,sz, W=width, H=height)
+                cl=7
+                outfile.write(f"{cl} {bouter[0]/width} {bouter[1]/height} {bouter[2]/width} {bouter[3]/height}\n")
+                cl=8
+                outfile.write(f"{cl} {binner[0]/width} {binner[1]/height} {binner[2]/width} {binner[3]/height}\n")
+                cl = 6
                 for p in  cs:
                     outfile.write(f"{cl} {p[0]/width} {p[1]/height} {sz/width} {sz/height}\n")
+                
 
 if __name__ == "__main__":
 
@@ -160,6 +165,8 @@ if __name__ == "__main__":
                 outfile.write(f" 4: cal4\n")
                 outfile.write(f" 5: dart\n")
                 outfile.write(f" 6: cross\n")
+                outfile.write(f" 7: outer_bull\n")
+                outfile.write(f" 8: inner_bull\n")
             else:
                 outfile.write(f" 1: dart\n")
 

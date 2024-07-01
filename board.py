@@ -69,14 +69,15 @@ class Board():
         cos_rad = np.cos(np.deg2rad(9))
         self.board_cal_pts = np.array([[- sin_rad, - cos_rad],[  sin_rad,   cos_rad],[- cos_rad,   sin_rad],[  cos_rad, - sin_rad]]).astype(np.float32) * self.r_double 
 
-    def get_cross_sections_pts(self):
+    def get_cross_sections_pts(self, radii=None):
         pts = []
         outer_id = []
+        if(radii is None):
+            radii = [self.r_double, self.r_double - self.w_double_treble, self.r_treble, self.r_treble - self.w_double_treble]#, board.r_outer_bull]]
         for a in range(-9,342, 18):
             a = np.deg2rad(a)
             outer_id.append(len(pts))
-            pts.extend([[np.cos(a)*d, np.sin(a)*d] for d in [self.r_double, self.r_double - self.w_double_treble,
-                                self.r_treble, self.r_treble - self.w_double_treble]])#, board.r_outer_bull]])
+            pts.extend([[np.cos(a)*d, np.sin(a)*d] for d in radii])
         return np.array(pts), outer_id
 
     def transform_cals(self, M, image_space=False):
