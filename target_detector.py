@@ -9,9 +9,10 @@ import math
 from board import Board, transform_points
 import statistics
 import time
-from functools import wraps
+
 
 from gen_ransac import *
+from tools import *
 
 from sklearn.neighbors import NearestNeighbors
 
@@ -19,17 +20,6 @@ from sklearn.neighbors import NearestNeighbors
 from ultralytics import YOLO
 
 from icp import icp
-
-def timeit(func):
-    @wraps(func)
-    def timeit_wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        result = func(*args, **kwargs)
-        end_time = time.perf_counter()
-        total_time = end_time - start_time
-        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
-        return result
-    return timeit_wrapper
 
 
 SECTORS_DICT = {
@@ -385,39 +375,37 @@ class YoloTargetDetector():
         return img
 
     def infer(self, img, dbg = None):
-        results = self.model(img, stream=True, max_det=100, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
+        res = infer(img, self.model, stream=True, max_det=120, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28, verbose=False)
 
+        res = filter_res(res)
         infered_calib = [None,None,None,None]
         infered_calib_conf = [0,0,0,0]
 
-
-        res = []
+        cross = []
         binner = None
         bouter = None
-        for r in results:
-            for box in r.boxes:
-                x1, y1, x2, y2 = box.xyxy[0]
+        for r in res:
+            x1, y1, x2, y2 = r["x1"],r["y1"],r["x2"],r["y2"]
 
-                # confidence
-                confidence = math.ceil((box.conf[0]*100))/100
+            confidence = r["conf"]
 
-                # class name
-                cls = int(box.cls[0])
+            # class name
+            cls = r["cls"]
 
-                if(cls>0 and cls<5):
-                    if(confidence > infered_calib_conf[cls-1]):
-                        infered_calib[cls-1] = np.array([(x1+x2)*0.5, (y1+y2)*0.5])
-                elif(cls == 6):
-                    res.append([(x1+x2)*0.5, (y1+y2)*0.5])
-                elif(cls == 7):
-                    bouter = [x1, y1, x2, y2]
-                elif(cls == 8):
-                    binner = [x1, y1, x2, y2]
-                elif(dbg is not None):
-                    cv2.rectangle(dbg, (int(x1),int(y1)), (int(x2),int(y2)), box_cols[cls], 1, cv2.LINE_AA)
+            if(cls>0 and cls<5):
+                if(confidence > infered_calib_conf[cls-1]):
+                    infered_calib[cls-1] = np.array([(x1+x2)*0.5, (y1+y2)*0.5])
+            elif(cls == 6):
+                cross.append([(x1+x2)*0.5, (y1+y2)*0.5])
+            elif(cls == 7):
+                bouter = [x1, y1, x2, y2]
+            elif(cls == 8):
+                binner = [x1, y1, x2, y2]
 
+        if(dbg is not None):
+            draw_inference_boxes(dbg, res, filter=[0,5,6])
 
-        return np.array(res), bouter, binner, infered_calib, infered_calib_conf
+        return np.array(cross), bouter, binner, infered_calib, infered_calib_conf
 
     def detect(self, img, refine_pts=True, dbg = None):
         self.bouter = None
@@ -567,10 +555,10 @@ class YoloTargetDetector():
             rot_angle = np.around(diff_angle/18.0) * 18
             print("diff_angle:",diff_angle, " => rot_angle:",rot_angle)
 
-            # if(dbg is not None):
-            #     cv2.circle(dbg, double_outer_pts_img[outer_ids[id_best]].astype(np.int32),20,(255,0,255),2)
-            #     cv2.circle(dbg, double_outer_pts_img[closest].astype(np.int32),20,(255,255,255),2)
-            #     cv2.circle(dbg, infered_calib[id_best].astype(np.int32),20,(0,100,255),2)
+            if(dbg is not None):
+                cv2.circle(dbg, double_outer_pts_img[outer_ids[id_best]].astype(np.int32),20,(255,0,255),2)
+                cv2.circle(dbg, double_outer_pts_img[closest].astype(np.int32),20,(255,255,255),2)
+                cv2.circle(dbg, infered_calib[id_best].astype(np.int32),20,(0,100,255),2)
                 
 
             #     cv2.circle(dbg, double_outer_pts_img[0].astype(np.int32),10,(255,0,0),-1)
@@ -596,7 +584,7 @@ class YoloTargetDetector():
     
     def draw_board(self, img):
         detected_center = (np.array([self.bouter[0],self.bouter[1]])+np.array([self.bouter[2],self.bouter[3]])) * 0.5 if self.bouter is not None else None
-        print("detected_center:",detected_center)
+        #print("detected_center:",detected_center)
         if(self.pts_cal is not None):
             self.board.draw(img, self.pts_cal, detected_center=detected_center)
         cv2.rectangle(img, (int(self.bouter[0]),int(self.bouter[1])), (int(self.bouter[2]),int(self.bouter[3])), (0,255,0), 1, cv2.LINE_AA)
@@ -793,12 +781,18 @@ if __name__ == "__main__":
 
     detector = YoloTargetDetector(None)
 
+    debug_test = None
     # mouse callback function
     def drawfunction(event,x,y,flags,param):
         if event == cv2.EVENT_MOUSEMOVE:
+            # if(debug_test is not None):
+                # draw_inference_boxes(debug_test,[{"x1":x,"y1":y,"x2":x,"y2":y,"conf":1.0,"cls":0}],filter=[0],detector = detector)
+                # cv2.imshow("Dbg", debug_test)
+            
             scores = detector.get_dart_scores([[x,y]])
-            print(scores[0])
-    cv2.namedWindow('Dbg')
+            #print(scores[0])
+            cv2.displayOverlay("Dbg",scores[0])
+    cv2.namedWindow('Dbg')#, cv2.WINDOW_GUI_EXPANDED)
     cv2.setMouseCallback('Dbg',drawfunction)
 
     for path in tests:
@@ -1757,8 +1751,8 @@ if __name__ == "__main__":
             
         def detector_yolo(img):
             detector.board = board
-            dbg = img.copy()
-            found_cals, M, conf = detector.detect(img, False, dbg)
+            debug_test = img.copy()
+            found_cals, M, conf = detector.detect(img, False, debug_test)
             res = []
             if(M is not None):
                 pts_cal = found_cals
@@ -1767,11 +1761,8 @@ if __name__ == "__main__":
                     res.append(v)
                     print(v)
 
-            draw(img, res, force_draw_all=True)
-            color_tgt = (200,180,60)
-            board.draw(img, found_cals, color_tgt)
-            cv2.imshow("Img", img)
-            cv2.imshow("Dbg", dbg)
+            #cv2.imshow("Img", img)
+            cv2.imshow("Dbg", debug_test)
             
 
         for i in range(3):

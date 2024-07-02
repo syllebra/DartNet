@@ -1,0 +1,173 @@
+
+import math
+from ultralytics import YOLO
+import numpy as np
+import time
+from functools import wraps
+import cv2
+
+# object classes
+classNames = ["tip", "cal1", "cal2", "cal3", "cal4", "dart", "cross", "D-Bull", "Bull"]
+MAX_CLASSES = len(classNames)
+
+# Colors definition
+box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30),(0,255,0),(0,0,255)]
+status_colors = {"not_detected": (0,0,255), "detected": (0,255,0), "opencv_detected": (0,160,75), "locked":(160,160)}
+
+
+# Timing function
+def timeit(func):
+    @wraps(func)
+    def timeit_wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
+        return result
+    return timeit_wrapper
+
+
+
+# Drawing tools section
+# ---------------------
+
+def concat_images(image_set, how='horizontal'):
+    return cv2.hconcat(image_set)
+
+
+def draw_inference_boxes(img, res, filter=[6], detector=None):
+    for box in res:
+        # confidence
+        confidence = box["conf"]
+        #print("Confidence --->",confidence)
+
+        # class name
+        cls = box["cls"]
+
+        if(filter is not None and cls in filter):
+            continue
+
+        x1, y1, x2, y2 = int(box["x1"]), int(box["y1"]), int(box["x2"]), int(box["y2"]) # convert to int values
+
+        # put box in cam
+        cv2.rectangle(img, (x1, y1), (x2, y2), box_cols[cls], 1)
+
+        text = f"{classNames[cls]} ({confidence:.2f})"
+        score = False
+        if(cls == 0 and detector is not None):
+            #scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
+            scores = detector.get_dart_scores([[(x1+x2)*0.5,(y1+y2)*0.5]])
+            text = f"{scores[0]} ({confidence:.2f})"
+            score = True
+
+        # object details
+        org = [x1, y1]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fontScale = 1.2 if score else 0.6
+        color = box_cols[cls]
+        thickness = 4 if score else 1
+
+        cv2.putText(img, text, org, font, fontScale, color, thickness)
+
+    if(detector is not None):
+        detector.draw_board(img)
+    return img
+
+
+# Inference section
+# -----------------
+
+def infer(img, mod: YOLO | None = None, **inference_params):
+    ''' Infer model and return as list of dict containing detected boxes '''
+    if(mod is None):
+        return None
+    
+    if(len(inference_params) == 0):
+        inference_params = { "stream": True, "max_det": 25, "conf": 0.3, "augment":False, "agnostic_nms":True, "vid_stride":28,"verbose":False }
+
+    results = mod(img, **inference_params)
+
+    res = []
+    for r in results:
+        for box in r.boxes:
+            x1, y1, x2, y2 = box.xyxy[0]
+
+            # confidence
+            confidence = math.ceil((box.conf[0]*100))/100
+
+            # class name
+            cls = int(box.cls[0])
+            res.append({"x1":x1, "y1":y1,"x2":x2, "y2":y2, "conf":confidence, "cls": cls})
+    return res
+
+def infer_temporal_detection(model, delta, min_conf = 0.4):
+    delta = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
+   
+    res = infer(delta, model)
+    res = [r for r in res if r['conf']>min_conf]
+    cpt_darts = 0
+    cpt_tips = 0
+    res = filter_res(res,filter_classes=[0,1])
+    tip = None
+    dart = None
+    for i in range(len(res)):
+        if(res[i]["cls"]==1):
+            cpt_darts += 1
+            res[i]["cls"] = 5
+            dart = res[i]
+        elif(res[i]["cls"]==0):
+            cpt_tips += 1
+            tip = [(float(res[i]["x1"])+float(res[i]["x2"]))*0.5,(float(res[i]["y1"])+float(res[i]["y2"]))*0.5]
+    return tip, res
+
+def find_cal_pts(res, confidence_min = 0.5):
+    ''' Analyze inference results and return found calibration points if all have been found '''
+    pts_cal_conf= [0.0,0.0,0.0,0.0]
+    pts_cal = np.zeros((4,2))
+    pts_cal_found = 0
+    
+    # coordinates
+    for box in res:
+        # confidence
+        confidence = box["conf"]
+        #print("Confidence --->",confidence)
+
+        if(confidence<confidence_min):
+            continue
+
+        # class name
+        cls = box["cls"]
+        if(cls>0 and cls<5):
+            #if(confidence<pts_cal_conf[cls-1]): continue
+            pts_cal_conf[cls-1] = confidence
+            pts_cal_found += 1
+            pts_cal[cls-1] = np.array([(box["x1"]+box["x2"])*0.5,(box["y1"]+box["y2"])*0.5])
+
+    return None if pts_cal_found <4 else pts_cal
+
+
+def filter_res(res, filter_classes = [1,2,3,4]):
+    ''' Analyze inference results and return and keep only best confidence of a given class '''
+
+    pts_cal_conf= [0.0] * MAX_CLASSES
+    best_id = [None] * MAX_CLASSES
+    
+    keep = []
+    # coordinates
+    for i,box in enumerate(res):
+        # confidence
+        confidence = box["conf"]
+
+        # class name
+        cls = box["cls"]
+        if(cls in filter_classes):
+            if(confidence<=pts_cal_conf[cls]): continue
+            pts_cal_conf[cls] = confidence
+            best_id[cls] = i
+        else:
+            keep.append(i)
+
+    keep.extend([i for i in best_id if i is not None])
+    return [res[i] for i in keep]
+

@@ -11,7 +11,7 @@ from board import Board, transform_points
 from videocapture import ScreenVideoCapture
 import playsound
 
-MAX_CLASSES = 6
+from tools import *
 
 # start webcam
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
@@ -36,8 +36,6 @@ board = Board(board_img_path.replace(".jpg",".json"))
 # detector = SiftTargetDetector(board_img_path)
 print("Initialize OpenCV YOLO detector...")
 detector = YoloTargetDetector(board_img_path)
-
-status_colors = {"not_detected": (0,0,255), "detected": (0,255,0), "opencv_detected": (0,160,75), "locked":(160,160)}
 
 # cap.set(3, 640)
 # cap.set(4, 480)
@@ -64,157 +62,23 @@ locked_target_delay = 5 # 10 frames without moving => stable
 locked_frames = 0
 locked = False
 last_cal_pts = None
+show_hit_debug = False
 
-# object classes
-classNames = ["tip", "cal1", "cal2", "cal3", "cal4", "dart","cross"]
 pts_cal_dst = None
 crop = None
 
 # create a CLAHE object (Arguments are optional).
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
 
-def find_cal_pts(res, confidence_min = 0.5):
-    pts_cal_conf= [0.0,0.0,0.0,0.0]
-    pts_cal = np.zeros((4,2))
-    pts_cal_found = 0
-    
-    # coordinates
-    for box in res:
-        # confidence
-        confidence = box["conf"]
-        #print("Confidence --->",confidence)
 
-        if(confidence<confidence_min):
-            continue
-
-        # class name
-        cls = box["cls"]
-        if(cls>0 and cls<5):
-            #if(confidence<pts_cal_conf[cls-1]): continue
-            pts_cal_conf[cls-1] = confidence
-            pts_cal_found += 1
-            pts_cal[cls-1] = np.array([(box["x1"]+box["x2"])*0.5,(box["y1"]+box["y2"])*0.5])
-
-    return None if pts_cal_found <4 else pts_cal
-
-#keep only best confidence of a given class
-def filter_res(res, filter_classes = [1,2,3,4]):
-    pts_cal_conf= [0.0] * MAX_CLASSES
-    best_id = [None] * MAX_CLASSES
-    
-    keep = []
-    # coordinates
-    for i,box in enumerate(res):
-        # confidence
-        confidence = box["conf"]
-
-        # class name
-        cls = box["cls"]
-        if(cls in filter_classes):
-            if(confidence<=pts_cal_conf[cls]): continue
-            pts_cal_conf[cls] = confidence
-            best_id[cls] = i
-        else:
-            keep.append(i)
-
-    keep.extend([i for i in best_id if i is not None])
-    return [res[i] for i in keep]
-
-
-def infer(img, mod = None):
-    if(mod is None):
-        mod = model
-    results = mod(img, stream=True, max_det=25, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
-
-    res = []
-    for r in results:
-        for box in r.boxes:
-            x1, y1, x2, y2 = box.xyxy[0]
-
-            # confidence
-            confidence = math.ceil((box.conf[0]*100))/100
-
-            # class name
-            cls = int(box.cls[0])
-            res.append({"x1":x1, "y1":y1,"x2":x2, "y2":y2, "conf":confidence, "cls": cls})
-    return res
-
-
-def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30),(0,255,0),(0,0,255)], filter=None, status = "not_detected", force_draw_all = False):
+def draw(img, res, filter=None, status = "not_detected", force_draw_all = False, detector=None):
     if(force_draw_all or status != "not_detected"):
-        for box in res:
-            # confidence
-            confidence = box["conf"]
-            #print("Confidence --->",confidence)
-
-            # class name
-            cls = box["cls"]
-
-            if(filter is not None and cls not in filter):
-                continue
-
-            x1, y1, x2, y2 = int(box["x1"]), int(box["y1"]), int(box["x2"]), int(box["y2"]) # convert to int values
-
-            # put box in cam
-            cv2.rectangle(img, (x1, y1), (x2, y2), box_cols[cls], 1)
-
-            text = f"{classNames[cls]} ({confidence:.2f})"
-            score = False
-            if(cls == 0):
-                #scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
-                scores = detector.get_dart_scores([[(x1+x2)*0.5,(y1+y2)*0.5]])
-                text = f"{scores[0]} ({confidence:.2f})"
-                score = True
-
-            # object details
-            org = [x1, y1]
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            fontScale = 1.2 if score else 0.6
-            color = box_cols[cls]
-            thickness = 4 if score else 1
-
-            cv2.putText(img, text, org, font, fontScale, color, thickness)
-
-        color_tgt = (200,180,60)
-        board.draw(img, pts_cal,color_tgt)
+        draw_inference_boxes(img, res, filter=filter, detector=detector)
+        if(detector is not None):
+            detector.draw_board(img)
     
     img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=status_colors[status])
     return img
-
-
-def concat_images(image_set, how='horizontal'):
-    return cv2.hconcat(image_set)
-
-def infer_temporal_detection(delta, min_conf = 0.4, debug = 0, dbg_img = None):
-    delta = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
-   
-    res = infer(delta, temporal_model)
-    res = [r for r in res if r['conf']>min_conf]
-    cpt_darts = 0
-    cpt_tips = 0
-    res = filter_res(res,filter_classes=[0,1])
-    tip = None
-    dart = None
-    for i in range(len(res)):
-        if(res[i]["cls"]==1):
-            cpt_darts += 1
-            res[i]["cls"] = 5
-            dart = res[i]
-        elif(res[i]["cls"]==0):
-            cpt_tips += 1
-            tip = [(float(res[i]["x1"])+float(res[i]["x2"]))*0.5,(float(res[i]["y1"])+float(res[i]["y2"]))*0.5]
-
-    if(cpt_tips>0 and cpt_darts>0):
-        if(debug >0):
-            win = f"{int((time.time()-ts)*1000)} ms"
-            delta = draw(delta,res,force_draw_all=True)
-            if(dbg_img is not None):
-                img = draw(dbg_img.copy(),res,force_draw_all=True)
-                cv2.imshow(win, concat_images([img, delta]))
-            else:
-                cv2.imshow(f"{win}_temporal", delta)
-    return tip, res
-
 
 # Infer models to prevent slow first calls
 print("Initializing models...")
@@ -278,15 +142,15 @@ if(perform_simple_interactive_calibration):
         test = img.copy()
         pts_cal, M, conf = detector.detect(img,dbg=test)
 
-        if(M is not None and manual_rot is not None):
-            Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
-            R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
-            R[:-1,:] = Rt
-            print(R)
-            tmp  = board.transform_cals(R)
-            pts_cal = transform_points(tmp, M)
-            test = img.copy()
-            board.draw(test,pts_cal)
+        # if(M is not None and manual_rot is not None):
+        #     Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
+        #     R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
+        #     R[:-1,:] = Rt
+        #     print(R)
+        #     tmp  = board.transform_cals(R)
+        #     pts_cal = transform_points(tmp, M)
+        #     test = img.copy()
+        #     board.draw(test,pts_cal)
 
         cv2.imshow("Inital Calib", test)
         key = cv2.waitKey(0)
@@ -393,7 +257,9 @@ while True:
                             detect = (elapsed*1000>=temporal_filter)
                     if(detect):
                         last_dart_time = -1
-                        tip, res = infer_temporal_detection(delta, debug=0,dbg_img=img)
+                        show_debug = False
+                        tip, res = infer_temporal_detection(temporal_model, delta)
+
                         if(tip is not None):
                             # for r in res:
                             playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
@@ -403,6 +269,18 @@ while True:
                             score = True
                             print(f"{int((time.time()-ts)*1000)}:{tip}=>{text}")
                             playsound.playsound(f"sound/hits/{scores[0]}.mp3", False)
+
+
+                            if(show_hit_debug):
+                                win = f"{int((time.time()-ts)*1000)} ms"
+                                delta_dbg = cv2.cvtColor( cv2.normalize(delta,None,0,255,cv2.NORM_MINMAX, cv2.CV_8U),cv2.COLOR_GRAY2BGR)
+                                delta_dbg = draw(delta_dbg,res,force_draw_all=True)
+                                if(img is not None):
+                                    img = draw(img.copy(),res,force_draw_all=True)
+                                    cv2.imshow(win, concat_images([img, delta_dbg]))
+                                else:
+                                    cv2.imshow(f"{win}_temporal", delta_dbg)
+
                     #res = infer_temporal_detection(delta, debug=1,dbg_img=img)
                 else:
                     res = []
@@ -435,7 +313,7 @@ while True:
         status = "opencv_detected" if opencv_detected else "detected"
         if(locked):
             status = "locked"
-    img = draw(img, res, status=status)
+    img = draw(img, res, status=status, detector=detector)
     
     # res2 = infer(img,model2)
     # draw(img, res2, (0,0,255),filter=[5])
