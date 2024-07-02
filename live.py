@@ -18,16 +18,16 @@ MAX_CLASSES = 6
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/unicorn_eclipse_hd2_A.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
-cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
+#cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
 #cap = ScreenVideoCapture(pick=True)
 print("Initilize video capture...")
-#cap = cv2.VideoCapture("./datasets/real/vid/home01.avi")
+cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
 time_mult=.25#0.0001#
 fps = 21.0
 
-#board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
+board_img_path = 'generator/3D/Boards/canaveral_t520.jpg'
 #board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
-board_img_path = 'generator/3D/Boards/winmau_blade_6.jpg'
+#board_img_path = 'generator/3D/Boards/winmau_blade_6.jpg'
 
 print("Load board data...")
 board = Board(board_img_path.replace(".jpg",".json"))
@@ -140,7 +140,7 @@ def infer(img, mod = None):
     return res
 
 
-def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30)], filter=None, status = "not_detected", force_draw_all = False):
+def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30),(0,255,0),(0,0,255)], filter=None, status = "not_detected", force_draw_all = False):
     if(force_draw_all or status != "not_detected"):
         for box in res:
             # confidence
@@ -161,7 +161,8 @@ def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,
             text = f"{classNames[cls]} ({confidence:.2f})"
             score = False
             if(cls == 0):
-                scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
+                #scores = board.get_dart_scores(pts_cal,[[(x1+x2)*0.5,(y1+y2)*0.5]])
+                scores = detector.get_dart_scores([[(x1+x2)*0.5,(y1+y2)*0.5]])
                 text = f"{scores[0]} ({confidence:.2f})"
                 score = True
 
@@ -396,7 +397,8 @@ while True:
                         if(tip is not None):
                             # for r in res:
                             playsound.playsound("sound/bow-release-bow-and-arrow-4-101936.mp3", False)
-                            scores = board.get_dart_scores(pts_cal,[[tip[0],tip[1]]])
+                            #scores = board.get_dart_scores(pts_cal,[[tip[0],tip[1]]])
+                            scores = detector.get_dart_scores([[tip[0],tip[1]]])
                             text = f"{scores[0]}"# ({tip["conf"]:.2f})"
                             score = True
                             print(f"{int((time.time()-ts)*1000)}:{tip}=>{text}")

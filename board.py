@@ -123,22 +123,28 @@ class Board():
                         scores[i] = int(s)
         return scores
 
-    def draw(self, img, calib_pts, color=(200,180,60), cal_cols=(0,200,255)):
+    def draw(self, img, calib_pts, color=(200,180,60), cal_cols=(0,200,255), detected_center = None):
         for p in calib_pts:
             cv2.circle(img, p.astype(np.int32),8,cal_cols,2)
 
         M = cv2.getPerspectiveTransform(np.array(self.board_cal_pts).astype(np.float32), np.array(calib_pts).astype(np.float32))
-        center = transform_points([[0,0]],M)[0].astype(np.int32)
+        center_trans = transform_points([[0,0]],M)[0].astype(np.int32)
+
+        center = detected_center if detected_center is not None else center_trans
+        offset_center = center - center_trans
         for a in range(-9,342, 18):
             a = np.deg2rad(a)
             pt = transform_points([[np.cos(a)*self.r_double, np.sin(a)*self.r_double]], M)[0]
-            cv2.line(img, pt.astype(np.int32), center,color, 1, cv2.LINE_AA)
+            ptc = transform_points([[np.cos(a)*self.r_outer_bull, np.sin(a)*self.r_outer_bull]], M)[0]
+            ptc += offset_center
+            cv2.line(img, pt.astype(np.int32), ptc.astype(np.int32),color, 1, cv2.LINE_AA)
 
         def _draw_circle(img, center, radius_real, M, color):
             def _circle(r_real, segments = None):
                 center_str = np.array([0,0])
                 if(segments is None):
                     segments = max(int(r_real * np.pi * 200),0)
+                    segments = max(segments,20)
                 a = np.arange(0,np.pi*2,np.pi*2/segments)
                 pts = np.array([np.cos(a),np.sin(a)]).T
                 pts = center_str + pts * r_real

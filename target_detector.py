@@ -32,9 +32,14 @@ def timeit(func):
     return timeit_wrapper
 
 
+SECTORS_DICT = {
+    0: '6', 1: '10', 2: '15', 3: '2', 4: '17', 5: '3', 6: '19', 7: '7', 8: '16', 9: '8',
+    10: '11', 11: '14', 12: '9', 13: '12', 14: '5', 15: '20', 16: '1', 17: '18', 18: '4', 19: '13'
+}
 
+box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30),(0,255,0),(0,0,255)]
 
-def draw(img, res, box_cols = [(255,255,0),(0,215,255),(180, 105, 255),(112,255,202),(114,128,250),(255,62,191),(255,200,30)], filter=None, status = "not_detected", force_draw_all = False):
+def draw(img, res, filter=None, status = "not_detected", force_draw_all = False):
     if(force_draw_all or status != "not_detected"):
         for box in res:
             # confidence
@@ -114,6 +119,17 @@ def four_point_transform(image, rect):
 	warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
 	# return the warped image
 	return warped
+
+def signed_angle(a,b,c):
+    ba = a - b
+    bc = c - b
+    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+    angle = np.arccos(cosine_angle)
+    sign = np.dot([0,0,1],np.cross(ba,bc))
+    if(sign[2]<0):
+        angle=-angle
+    return np.degrees(angle)
+
 
 def refine_sub_pix(pts, img):
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.01)
@@ -344,7 +360,7 @@ class PerspectiveBoardFit(Model):
         # return min_d
     
 class YoloTargetDetector():
-    def __init__(self, board, model_path="best_s_tip_boxes_cross_640.pt", auto_am_calib=False) -> None:
+    def __init__(self, board, model_path="best_s_tip_boxes_cross_640_B.pt", auto_am_calib=False) -> None:
         print("Load general model...")
         self.model = YOLO(model_path)
         self.board = Board("dummy")
@@ -354,6 +370,9 @@ class YoloTargetDetector():
         self.pts, self.outer_ids = self.board.get_cross_sections_pts()
         self.auto_am_calib = auto_am_calib
         
+        self.bouter = None
+        self.binner = None
+        self.pts_cal = None
         # img = self.build_img(pts,(512,512))
         # self.sift = SiftTargetDetector(img, self.board)
         # print( len(self.sift.kp1), len(self.sift.des1))
@@ -365,10 +384,16 @@ class YoloTargetDetector():
             cv2.circle(img,p,3,255,-1,cv2.LINE_AA)
         return img
 
-    def infer(self, img):
+    def infer(self, img, dbg = None):
         results = self.model(img, stream=True, max_det=100, conf = 0.3, augment=False,agnostic_nms=True, vid_stride=28,verbose=False)
 
+        infered_calib = [None,None,None,None]
+        infered_calib_conf = [0,0,0,0]
+
+
         res = []
+        binner = None
+        bouter = None
         for r in results:
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0]
@@ -378,19 +403,34 @@ class YoloTargetDetector():
 
                 # class name
                 cls = int(box.cls[0])
-                if(cls == 6):
+
+                if(cls>0 and cls<5):
+                    if(confidence > infered_calib_conf[cls-1]):
+                        infered_calib[cls-1] = np.array([(x1+x2)*0.5, (y1+y2)*0.5])
+                elif(cls == 6):
                     res.append([(x1+x2)*0.5, (y1+y2)*0.5])
-        return np.array(res)
+                elif(cls == 7):
+                    bouter = [x1, y1, x2, y2]
+                elif(cls == 8):
+                    binner = [x1, y1, x2, y2]
+                elif(dbg is not None):
+                    cv2.rectangle(dbg, (int(x1),int(y1)), (int(x2),int(y2)), box_cols[cls], 1, cv2.LINE_AA)
+
+
+        return np.array(res), bouter, binner, infered_calib, infered_calib_conf
 
     def detect(self, img, refine_pts=True, dbg = None):
+        self.bouter = None
+        self.binner = None
+        self.pts_cal = None
+
         # Step 1: Infer using trained model to find board intersections
         # -------------
-        corners = self.infer(img)
+        corners, self.bouter, self.binner, infered_calib, infered_calib_conf = self.infer(img, dbg= dbg)
 
         if(dbg is not None):
             for p in corners.astype(np.int32):
                 cv2.circle(dbg,p,3,(255,255,0),1,cv2.LINE_AA)
-    
 
         # Step 2: Coarse initialisation using rough center/scale
         # -------------
@@ -509,9 +549,127 @@ class YoloTargetDetector():
             cv2.imshow("undistort",dst)
 
 
+        # Step 8: Auto rotation if one of the calib corners have been detected by model
+        id_best = np.argmax(infered_calib_conf)
+        if(infered_calib[id_best] is not None):
+            outer_ids = [15,5,10,0] # maps calib point to outer pts id
+            print("best calib for auto_rotation:", infered_calib[id_best],id_best)
+            #Mi = cv2.getPerspectiveTransform(np.array(tr_xy).astype(np.float32), np.array(self.board.board_cal_pts).astype(np.float32))
+            double_outer_pts = self.board.get_cross_sections_pts([self.board.r_double])[0]
+            double_outer_pts_img = transform_points(double_outer_pts,M)
+
+            distances = np.linalg.norm(double_outer_pts_img-infered_calib[id_best], axis=-1)
+            print(distances)
+            closest = np.argmin(distances)
+
+            infered_calib_board = double_outer_pts[outer_ids[id_best]]
+            diff_angle = signed_angle(double_outer_pts[closest],np.array([0,0]),infered_calib_board)
+            rot_angle = np.around(diff_angle/18.0) * 18
+            print("diff_angle:",diff_angle, " => rot_angle:",rot_angle)
+
+            # if(dbg is not None):
+            #     cv2.circle(dbg, double_outer_pts_img[outer_ids[id_best]].astype(np.int32),20,(255,0,255),2)
+            #     cv2.circle(dbg, double_outer_pts_img[closest].astype(np.int32),20,(255,255,255),2)
+            #     cv2.circle(dbg, infered_calib[id_best].astype(np.int32),20,(0,100,255),2)
+                
+
+            #     cv2.circle(dbg, double_outer_pts_img[0].astype(np.int32),10,(255,0,0),-1)
+            #     cv2.circle(dbg, double_outer_pts_img[5].astype(np.int32),10,(0,255,0),-1)
+            #     cv2.circle(dbg, double_outer_pts_img[10].astype(np.int32),10,(0,0,255),-1)
+            #     cv2.circle(dbg, double_outer_pts_img[15].astype(np.int32),10,(0,255,255),-1)
+
+            # make rotation
+            if(np.abs(rot_angle) > 0.0001 ):
+                Rt = cv2.getRotationMatrix2D(center=(0,0), angle=rot_angle, scale=1)
+                R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
+                R[:-1,:] = Rt
+                tmp  = self.board.transform_cals(R)
+                tr_xy = transform_points(tmp, M)
+
+
+        self.pts_cal = tr_xy
+
         if(dbg is not None):
-            self.board.draw(dbg, tr_xy)
+            self.draw_board(dbg)
+
         return tr_xy, M, 0
+    
+    def draw_board(self, img):
+        detected_center = (np.array([self.bouter[0],self.bouter[1]])+np.array([self.bouter[2],self.bouter[3]])) * 0.5 if self.bouter is not None else None
+        print("detected_center:",detected_center)
+        if(self.pts_cal is not None):
+            self.board.draw(img, self.pts_cal, detected_center=detected_center)
+        cv2.rectangle(img, (int(self.bouter[0]),int(self.bouter[1])), (int(self.bouter[2]),int(self.bouter[3])), (0,255,0), 1, cv2.LINE_AA)
+        cv2.rectangle(img, (int(self.binner[0]),int(self.binner[1])), (int(self.binner[2]),int(self.binner[3])), (0,0,255), 1, cv2.LINE_AA)
+
+
+    def get_dart_scores(self, tips_pts, numeric=False):
+        if(self.bouter is None and self.binner is None):
+            return self.board.get_dart_scores(self.pts_cal, tips_pts,numeric)
+
+        detected_center = None
+        # More precise implementation if bull/ outer bull are detected
+        if(self.bouter is not None):
+            detected_center = (np.array([self.bouter[0],self.bouter[1]])+np.array([self.bouter[2],self.bouter[3]])) * 0.5
+        elif(self.binner is not None):
+            detected_center = (np.array([self.binner[0],self.binner[1]])+np.array([self.binner[2],self.binner[3]])) * 0.5
+
+        M = cv2.getPerspectiveTransform(np.array(self.pts_cal).astype(np.float32), np.array(self.board.board_cal_pts).astype(np.float32))
+        tips_board = transform_points(tips_pts,M)
+        
+        # compute distances from rectified center
+        detected_center_board = transform_points([detected_center],M)[0]
+        distances = np.linalg.norm(tips_board[:]-detected_center_board, axis=-1)
+        double_outer_pts = self.board.get_cross_sections_pts([self.board.r_double])[0]
+        #return self.board.get_dart_scores(self.pts_cal, tips_pts,numeric)
+
+        def _is_ccw(a, b, c):
+            #https://stackoverflow.com/questions/37600118/test-if-point-inside-angle
+            return ((a[0] - c[0])*(b[1] - c[1]) - (a[1] - c[1])*(b[0] - c[0])) > 0
+        
+        def _is_in_region(o,a,b,p):
+            return _is_ccw(o,a,p) and not _is_ccw(o,b,p)
+
+        def _get_sector(p):
+            for i in range(20):
+                a = double_outer_pts[i]
+                b = double_outer_pts[(i+1)%20]
+                if(_is_in_region(detected_center_board,a,b,p)):
+                    return i
+            return 0
+        
+        scores = []
+        sectors = [_get_sector(p) for p in tips_board]
+        for sector, dist in zip(sectors, distances):
+            if dist > self.board.r_double:
+                scores.append('0')
+            elif dist <= self.board.r_inner_bull:
+                scores.append('DB')
+            elif dist <= self.board.r_outer_bull:
+                scores.append('B')
+            else:
+                number = SECTORS_DICT[sector]
+                if dist <= self.board.r_double and dist > self.board.r_double - self.board.w_double_treble:
+                    scores.append('D' + number)
+                elif dist <= self.board.r_treble and dist > self.board.r_treble - self.board.w_double_treble:
+                    scores.append('T' + number)
+                else:
+                    scores.append(number)
+        if numeric:
+            for i, s in enumerate(scores):
+                if 'B' in s:
+                    if 'D' in s:
+                        scores[i] = 50
+                    else:
+                        scores[i] = 25
+                else:
+                    if 'D' in s or 'T' in s:
+                        scores[i] = int(s[1:])
+                        scores[i] = scores[i] * 2 if 'D' in s else scores[i] * 3
+                    else:
+                        scores[i] = int(s)
+        return scores
+
 
 
 def createLineIterator(P1, P2, img):
@@ -634,6 +792,14 @@ if __name__ == "__main__":
     tests = [os.path.join(dir,f) for f in os.listdir(dir) if ".jpg" in f or ".png" in f]
 
     detector = YoloTargetDetector(None)
+
+    # mouse callback function
+    def drawfunction(event,x,y,flags,param):
+        if event == cv2.EVENT_MOUSEMOVE:
+            scores = detector.get_dart_scores([[x,y]])
+            print(scores[0])
+    cv2.namedWindow('Dbg')
+    cv2.setMouseCallback('Dbg',drawfunction)
 
     for path in tests:
         board_path = path.replace(".jpg",".json") if ".jpg" in path  else path.replace(".png",".json")
@@ -874,15 +1040,6 @@ if __name__ == "__main__":
                         angle = np.arccos(cosine_angle)
                         return np.degrees(angle)
                     
-                    def signed_angle(a,b,c):
-                        ba = a - b
-                        bc = c - b
-                        cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-                        angle = np.arccos(cosine_angle)
-                        sign = np.dot([0,0,1],np.cross(ba,bc))
-                        if(sign[2]<0):
-                            angle=-angle
-                        return np.degrees(angle)
                     
                     p0 = np.array([l[0], l[1]])
                     p1 = np.array([l[2], l[3]])
@@ -1177,7 +1334,6 @@ if __name__ == "__main__":
             #     #     exit()
 
 
-        
             def ellipse_detector_test_from_sat_old(im_src, dbg):
                 # cv2.imshow("dt",s)
 
@@ -1417,8 +1573,7 @@ if __name__ == "__main__":
 
             #board_ransac_detection(center)
             ellipse_detector_test_from_sat(center)
-            cv2.imshow("image",img)                
-            
+            cv2.imshow("image",img)
 
 
         def get_points_5(img):
