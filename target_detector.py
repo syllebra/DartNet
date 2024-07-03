@@ -138,20 +138,6 @@ def autocanny(imCal, sigma = 0.33):
 
     return edged
 
-def filter_percentiles(data, minim=25, maxim=75, axis=0):
-    try:
-        q1 = np.percentile(data, minim, axis=axis)
-        q3 = np.percentile(data, maxim, axis=axis)
-        iqr = q3 - q1
-        threshold = 1.5 * iqr
-        pts = np.where((data < q1 - threshold) | (data > q3 + threshold))
-        outliers = set(pts[0])
-        return outliers
-    except:
-        pass
-    return set()
-
-
 def rotated_ellipse_line_intersection(el, p0, p1):
     # from http://quickcalcbasic.com/ellipse%20line%20intersection.pdf
 
@@ -247,7 +233,7 @@ class SiftTargetDetector():
         self.sift = cv2.SIFT_create(500)
         # find the keypoints and descriptors with SIFT
         self.kp1, self.des1 = self.sift.detectAndCompute(self.img1,None)
-        print( self.kp1[0], self.des1[0])
+        #print( self.kp1[0], self.des1[0])
 
 
     def match(self, img2, compute_inverse=False):
@@ -320,6 +306,8 @@ class PerspectiveBoardFit(Model):
     def build(self, pairs) -> None:
         src = np.array(self.src[pairs[:,0]]).astype(np.float32)
         dst = np.array(self.dst[pairs[:,1]]).astype(np.float32)
+        if(len(pairs) != 4 or len(src) !=4 or len(dst) != 4):
+            return None
         self.M = cv2.getPerspectiveTransform(src,dst)
         return self.M
     
@@ -351,7 +339,7 @@ class PerspectiveBoardFit(Model):
     
 class YoloTargetDetector():
     def __init__(self, board, model_path="best_s_tip_boxes_cross_640_B.pt", auto_am_calib=False) -> None:
-        print("Load general model...")
+        print("Load YoloTargetDetector model...")
         self.model = YOLO(model_path)
         self.board = Board("dummy")
         if(board is not None):
@@ -424,8 +412,31 @@ class YoloTargetDetector():
         # -------------
         orig= (self.pts/ self.board.r_board)
         center = np.mean(corners, axis=0)
-        # if(dbg is not None):
-        #     cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
+        
+        # try finer center 
+        finer = False
+        if(self.bouter is not None):
+            center = np.array([(self.bouter[0]+self.bouter[2])*0.5,(self.bouter[1]+self.bouter[3])*0.5])
+            finer = True
+        elif(self.binner is not None):
+            center = np.array([(self.binner[0]+self.binner[2])*0.5,(self.binner[1]+self.binner[3])*0.5])
+            finer = True
+
+        # try removing outliers for better finding in more global captures
+        distances = np.linalg.norm(np.array(corners)-center, axis=-1)
+        fd = filter_percentiles(distances)
+        inl = [i for i in range(len(distances)) if i not in fd]
+        if(dbg is not None):
+            for i in fd:
+                cv2.drawMarker(dbg,corners[i].astype(np.int32),(0,100,255),cv2.MARKER_TILTED_CROSS, 10,1, cv2.LINE_AA)
+
+        corners = corners[inl]
+        if(not finer):
+            center = np.array(corners).mean(axis=0)
+
+        if(dbg is not None):
+            cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)            
+
         scale = np.max(abs(corners-center),axis=0)
         pts = orig * scale *1.2 + center
 
@@ -449,7 +460,11 @@ class YoloTargetDetector():
         # -------------
         M = ransac_fit(PerspectiveBoardFit(self.pts,corners), np.array(closest_point_pairs,np.int32), success_probabilities=0.99, outliers_ratio=0.6, inliers_thres=5)
         if(M is None):
-            print("Error")
+            print("Error in YoloTargetDetector Step 4: first RANSAC Fit")
+            if(dbg is not None):
+                cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
+                for i,p in enumerate(pts.astype(np.int32)):
+                    cv2.drawMarker(dbg,p,(0,255,255),cv2.MARKER_DIAMOND, 10,1, cv2.LINE_AA)
             return None, None, 0
 
         tr_xy = self.board.transform_cals(M,False)
@@ -491,7 +506,7 @@ class YoloTargetDetector():
 
         M = ransac_fit(PerspectiveBoardFit(self.pts,corners), valid_pairs, success_probabilities=0.999, outliers_ratio=0.5, inliers_thres=1.5)
         if(M is None):
-            print("Error")
+            print("Error in YoloTargetDetector Step 6: second RANSAC Fit")
             return None, None, 0
 
         tr_xy = self.board.transform_cals(M,False)
@@ -586,8 +601,10 @@ class YoloTargetDetector():
         #print("detected_center:",detected_center)
         if(self.pts_cal is not None):
             self.board.draw(img, self.pts_cal, detected_center=detected_center)
-        cv2.rectangle(img, (int(self.bouter[0]),int(self.bouter[1])), (int(self.bouter[2]),int(self.bouter[3])), (0,255,0), 1, cv2.LINE_AA)
-        cv2.rectangle(img, (int(self.binner[0]),int(self.binner[1])), (int(self.binner[2]),int(self.binner[3])), (0,0,255), 1, cv2.LINE_AA)
+        if(self.bouter is not None):
+            cv2.rectangle(img, (int(self.bouter[0]),int(self.bouter[1])), (int(self.bouter[2]),int(self.bouter[3])), (0,255,0), 1, cv2.LINE_AA)
+        if(self.binner is not None):
+            cv2.rectangle(img, (int(self.binner[0]),int(self.binner[1])), (int(self.binner[2]),int(self.binner[3])), (0,0,255), 1, cv2.LINE_AA)
 
 
     def get_dart_scores(self, tips_pts, numeric=False):
@@ -1758,7 +1775,6 @@ if __name__ == "__main__":
                 for i,p in enumerate(pts_cal):
                     v = {"x1": p[0]-10, "y1": p[1]-10,"x2": p[0]+10, "y2": p[1]+10, 'conf':0.9, "cls":i+1}
                     res.append(v)
-                    print(v)
 
             #cv2.imshow("Img", img)
             cv2.imshow("Dbg", debug_test)
@@ -1770,3 +1786,5 @@ if __name__ == "__main__":
             key = cv2.waitKey(0)
             if(key == ord('q')):
                 exit(0)
+            elif(key == ord('n')):
+                break

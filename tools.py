@@ -71,6 +71,20 @@ def crop_img(img, crop, model_train_size = 640, clahe = None):
     return img
 
 
+def filter_percentiles(data, minim=25, maxim=75, axis=0):
+    try:
+        q1 = np.percentile(data, minim, axis=axis)
+        q3 = np.percentile(data, maxim, axis=axis)
+        iqr = q3 - q1
+        threshold = 1.5 * iqr
+        pts = np.where((data < q1 - threshold) | (data > q3 + threshold))
+        outliers = set(pts[0])
+        return outliers
+    except:
+        pass
+    return set()
+
+
 # Drawing tools section
 # ---------------------
 
