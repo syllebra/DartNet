@@ -2,7 +2,6 @@ from ultralytics import YOLO
 import cv2
 import math
 import numpy as np
-from generator.annotate import seg_intersect
 import time
 import os
 import json
@@ -85,44 +84,6 @@ print("Initializing models...")
 infer(np.zeros((model_train_size,model_train_size,3)), model)
 infer(np.zeros((model_train_size,model_train_size,3)), temporal_model)
 
-def auto_crop(pts_cal):
-    center = seg_intersect(pts_cal[0],pts_cal[1],pts_cal[2],pts_cal[3])
-    x1 = int(center[0]-12)
-    y1 = int(center[1]-12)
-    x2 = int(center[0]+12)
-    y2 = int(center[1]+12)
-    #cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
-    mode = 0
-    if(mode == 0):
-        dis = (pts_cal-center) * 1.35
-        max = np.max(np.abs(dis))
-        # print(center)
-        # print(max)
-        crop = [int(np.clip(center[0]-max,0,width)),
-                int(np.clip(center[1]-max,0,height)),
-                int(np.clip(center[0]+max,0,width)),
-                int(np.clip(center[1]+max,0,height))]
-        
-        # sm = (img[crop[1]:crop[3],crop[0]:crop[2],:])
-        # ratio = model_train_size/np.max(img.shape)
-        # sm= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
-        # cv2.imshow("sm",sm)
-        # r2 = infer(sm)
-        # pts_cal_dst = find_cal_pts(r2)
-        # print("FOUND DST CAL:",pts_cal_dst)
-    return crop
-
-def crop_img(img, crop, use_clahe = False):
-    img = (img[crop[1]:crop[3],crop[0]:crop[2],:])
-    ratio = model_train_size/np.max(img.shape)
-    img= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
-    #img = clahe.apply(img)
-    if(use_clahe):
-        img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
-        img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
-        img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
-    return img
-
 pts_cal = None
 perform_simple_interactive_calibration = True
 
@@ -136,8 +97,8 @@ if(perform_simple_interactive_calibration):
     manual_rot = 0
     pts_cal, M, conf = detector.detect(test,dbg=test)
     if(pts_cal is not None):
-        crop = auto_crop(pts_cal)
-        img = crop_img(img, crop, use_clahe=use_clahe)
+        crop = auto_crop(pts_cal, width, height)
+        img = crop_img(img, crop, clahe= clahe if use_clahe else None)
     while True:
         test = img.copy()
         pts_cal, M, conf = detector.detect(img,dbg=test)
@@ -195,7 +156,7 @@ while True:
     ratio = None
     cropped = False
     if(crop is not None):
-        img = crop_img(img, crop, use_clahe=use_clahe)
+        img = crop_img(img, crop, clahe=clahe if use_clahe else None)
         cropped = True
 
     if(locked):
@@ -235,13 +196,14 @@ while True:
                 non_null = np.sum(delta>0.04)
                 pct = non_null * 100.0 / (delta.shape[0]*delta.shape[1])
                 #print(f"PCT:{pct:.2f}")
-
+                
                 potential_dart_movement = (pct>0.4 and pct < 10)
+                cv2.displayOverlay('Webcam', f"Potential movement:{pct:.2f} > {potential_dart_movement}")
 
                 # dbg = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
                 # dbg = cv2.copyMakeBorder(dbg, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=(255,0,0) if potential_dart_movement else (50,0,0))
                 # cv2.imshow("delta", dbg)
-
+                cv2.imshow("delta",delta)
                 if(potential_dart_movement):
                     print(f"{int((time.time()-ts)*1000)}: potential_dart_movement {pct:.1f}%")
                     playsound.playsound("sound/start-13691.mp3",False)
@@ -257,7 +219,6 @@ while True:
                             detect = (elapsed*1000>=temporal_filter)
                     if(detect):
                         last_dart_time = -1
-                        show_debug = False
                         tip, res = infer_temporal_detection(temporal_model, delta)
 
                         if(tip is not None):
@@ -270,7 +231,6 @@ while True:
                             print(f"{int((time.time()-ts)*1000)}:{tip}=>{text}")
                             playsound.playsound(f"sound/hits/{scores[0]}.mp3", False)
 
-
                             if(show_hit_debug):
                                 win = f"{int((time.time()-ts)*1000)} ms"
                                 delta_dbg = cv2.cvtColor( cv2.normalize(delta,None,0,255,cv2.NORM_MINMAX, cv2.CV_8U),cv2.COLOR_GRAY2BGR)
@@ -280,6 +240,7 @@ while True:
                                     cv2.imshow(win, concat_images([img, delta_dbg]))
                                 else:
                                     cv2.imshow(f"{win}_temporal", delta_dbg)
+                        #last = None
 
                     #res = infer_temporal_detection(delta, debug=1,dbg_img=img)
                 else:
@@ -288,6 +249,9 @@ while True:
             #cv2.imshow("diff", diff)
             if(last_diff is None or last_dart_time<0):
                 last_diff = diff
+
+            cv2.imshow("diff",diff)
+            
         else:
             last = img_gray
         #print(f"Temporal computation: {int((time.time()-tps)*1000)} ms")

@@ -432,8 +432,8 @@ class YoloTargetDetector():
         # Step 3: Iteratice closest point algorithm to find some matching pairs
         # -------------
         transformation_history, aligned_points, closest_point_pairs = icp(pts, corners,distance_threshold=15,point_pairs_threshold=10, verbose=False)
-        if(dbg is not None):
-            print("Pairs:",len(closest_point_pairs))
+        # if(dbg is not None):
+        #     print("Pairs:",len(closest_point_pairs))
         # for p in aligned_points.astype(np.int32):
         #     cv2.drawMarker(dbg,p,(255,0,255),cv2.MARKER_TILTED_CROSS, 20)
         # for p in pts.astype(np.int32):
@@ -541,19 +541,18 @@ class YoloTargetDetector():
         id_best = np.argmax(infered_calib_conf)
         if(infered_calib[id_best] is not None):
             outer_ids = [15,5,10,0] # maps calib point to outer pts id
-            print("best calib for auto_rotation:", infered_calib[id_best],id_best)
+            #print("best calib for auto_rotation:", infered_calib[id_best],id_best)
             #Mi = cv2.getPerspectiveTransform(np.array(tr_xy).astype(np.float32), np.array(self.board.board_cal_pts).astype(np.float32))
             double_outer_pts = self.board.get_cross_sections_pts([self.board.r_double])[0]
             double_outer_pts_img = transform_points(double_outer_pts,M)
 
             distances = np.linalg.norm(double_outer_pts_img-infered_calib[id_best], axis=-1)
-            print(distances)
             closest = np.argmin(distances)
 
             infered_calib_board = double_outer_pts[outer_ids[id_best]]
             diff_angle = signed_angle(double_outer_pts[closest],np.array([0,0]),infered_calib_board)
             rot_angle = np.around(diff_angle/18.0) * 18
-            print("diff_angle:",diff_angle, " => rot_angle:",rot_angle)
+            #print("diff_angle:",diff_angle, " => rot_angle:",rot_angle)
 
             if(dbg is not None):
                 cv2.circle(dbg, double_outer_pts_img[outer_ids[id_best]].astype(np.int32),20,(255,0,255),2)

@@ -229,8 +229,8 @@ def ransac_fit(model: Model, pnts, success_probabilities=0.98, outliers_ratio = 
 
     # compute maximum iterations from parameters
     max_itts = round(np.log(1-success_probabilities) / np.log(1-np.power(1-outliers_ratio, 5)))
-    if(DEBUG):
-        print("Computed max iters:", max_itts)
+    # if(DEBUG):
+    #     print("Computed max iters:", max_itts)
 
     # Ransac iterations
     for iter in range(max_itts):

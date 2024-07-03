@@ -6,6 +6,8 @@ import time
 from functools import wraps
 import cv2
 
+from generator.annotate import seg_intersect
+
 # object classes
 classNames = ["tip", "cal1", "cal2", "cal3", "cal4", "dart", "cross", "D-Bull", "Bull"]
 MAX_CLASSES = len(classNames)
@@ -27,6 +29,46 @@ def timeit(func):
         return result
     return timeit_wrapper
 
+# Misc. utils functions
+# ---------------------
+
+def auto_crop(pts_cal, width, height):
+    center = seg_intersect(pts_cal[0],pts_cal[1],pts_cal[2],pts_cal[3])
+    x1 = int(center[0]-12)
+    y1 = int(center[1]-12)
+    x2 = int(center[0]+12)
+    y2 = int(center[1]+12)
+    #cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
+    mode = 0
+    if(mode == 0):
+        dis = (pts_cal-center) * 1.35
+        max = np.max(np.abs(dis))
+        # print(center)
+        # print(max)
+        crop = [int(np.clip(center[0]-max,0,width)),
+                int(np.clip(center[1]-max,0,height)),
+                int(np.clip(center[0]+max,0,width)),
+                int(np.clip(center[1]+max,0,height))]
+        
+        # sm = (img[crop[1]:crop[3],crop[0]:crop[2],:])
+        # ratio = model_train_size/np.max(img.shape)
+        # sm= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
+        # cv2.imshow("sm",sm)
+        # r2 = infer(sm)
+        # pts_cal_dst = find_cal_pts(r2)
+        # print("FOUND DST CAL:",pts_cal_dst)
+    return crop
+
+def crop_img(img, crop, model_train_size = 640, clahe = None):
+    img = (img[crop[1]:crop[3],crop[0]:crop[2],:])
+    ratio = model_train_size/np.max(img.shape)
+    img= cv2.resize(img,(int(img.shape[1]*ratio),int(img.shape[0]*ratio)),interpolation=cv2.INTER_LANCZOS4)
+    #img = clahe.apply(img)
+    if(clahe is not None):
+        img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+        img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
+        img = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+    return img
 
 
 # Drawing tools section
