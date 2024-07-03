@@ -456,19 +456,24 @@ class YoloTargetDetector():
                 # cv2.line(dbg,pts[a].astype(np.int32), corners[b].astype(np.int32),(0,0,255),1, cv2.LINE_AA)
                 cv2.circle(dbg,corners[b].astype(np.int32),2,(0,255,255),-1,cv2.LINE_AA)
 
-        # Step 4: First ransac fitting to find reasonable target pose
-        # -------------
-        M = ransac_fit(PerspectiveBoardFit(self.pts,corners), np.array(closest_point_pairs,np.int32), success_probabilities=0.99, outliers_ratio=0.6, inliers_thres=5)
-        if(M is None):
-            print("Error in YoloTargetDetector Step 4: first RANSAC Fit")
+        def _first_RANSAC_debug(dbg, pts):
             if(dbg is not None):
                 cv2.drawMarker(dbg,center.astype(np.int32),(255,255,0),cv2.MARKER_TILTED_CROSS, 30,4, cv2.LINE_AA)
                 for i,p in enumerate(pts.astype(np.int32)):
                     cv2.drawMarker(dbg,p,(0,255,255),cv2.MARKER_DIAMOND, 10,1, cv2.LINE_AA)
+
+        # Step 4: First ransac fitting to find reasonable target pose
+        # -------------
+        M = ransac_fit(PerspectiveBoardFit(self.pts,corners), np.array(closest_point_pairs,np.int32), success_probabilities=0.99, outliers_ratio=0.6, inliers_thres=5)
+        if(M is None):
+            print("Error in YoloTargetDetector Step 4: first RANSAC Fit (A)")
+            _first_RANSAC_debug(dbg, pts)
             return None, None, 0
 
         tr_xy = self.board.transform_cals(M,False)
         if(len(tr_xy)<4):
+            print("Error in YoloTargetDetector Step 4: first RANSAC Fit (B)")
+            _first_RANSAC_debug(dbg, pts)
             return None, None, 0
 
         # if(dbg is not None):
@@ -507,6 +512,7 @@ class YoloTargetDetector():
         M = ransac_fit(PerspectiveBoardFit(self.pts,corners), valid_pairs, success_probabilities=0.999, outliers_ratio=0.5, inliers_thres=1.5)
         if(M is None):
             print("Error in YoloTargetDetector Step 6: second RANSAC Fit")
+            _first_RANSAC_debug(dbg, projected)
             return None, None, 0
 
         tr_xy = self.board.transform_cals(M,False)
