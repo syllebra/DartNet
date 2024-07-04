@@ -12,6 +12,8 @@ import playsound
 
 from tools import *
 
+pause_overlay = cv2.imread('images/pause.png', cv2.IMREAD_UNCHANGED)  # IMREAD_UNCHANGED => open image with the alpha channel
+pause_overlay[:,:,3] = (255-pause_overlay[:,:,2]) *0.65
 # start webcam
 print("Initilize video capture...")
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
@@ -63,7 +65,7 @@ locked_frames = 0
 locked = False
 last_cal_pts = None
 show_hit_debug = False
-
+pause_detection = False
 crop = None
 
 # create a CLAHE object (Arguments are optional).
@@ -201,7 +203,7 @@ while True:
     if(cropped and temporal_detection and pts_cal is not None):
         tps = time.time()
         img_gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY) / 255.0
-        if(last is not None):
+        if(not pause_detection and last is not None):
             diff = cv2.absdiff(img_gray, last)
             if(last_diff is not None):
                 delta = cv2.absdiff(diff, last_diff)
@@ -221,7 +223,7 @@ while True:
                 cv2.imshow("delta",delta)
                 if(potential_dart_movement):
                     print(f"{int((time.time()-ts)*1000)}: potential_dart_movement {pct:.1f}%")
-                    playsound.playsound("sound/start-13691.mp3",False)
+                    #playsound.playsound("sound/start-13691.mp3",False)
                     # induce a small delay to let dart land and avoid detect while flying
                     detect = False
                     if(temporal_filter<0):
@@ -294,6 +296,11 @@ while True:
             status = "locked"
     img = draw(img, res, status=status, detector=detector)
     
+    if(pause_detection):
+        x_offset = 0
+        y_offset = 0
+        add_transparent_image(img, pause_overlay, x_offset, y_offset)
+
     # res2 = infer(img,model2)
     # draw(img, res2, (0,0,255),filter=[5])
     #img_disp = img.resize((int(height*0.3),int(width*0.3)),refcheck=False)
@@ -302,13 +309,19 @@ while True:
     # else:
     #     print(img)
     key = cv2.waitKey(1)
-    if key == ord('q'):
+    if key == ord('q') or key == 27:
         break
     elif key == ord('r'):
         cropped=False
         crop = None
         locked_frames = 0
         lockex = False
+    elif key == ord(' '):
+        pause_detection = not pause_detection
+        if(not pause_detection):
+            last = None
+            last_diff = None
+
 
 cap.release()
 cv2.destroyAllWindows()
