@@ -338,7 +338,7 @@ class PerspectiveBoardFit(Model):
         # return min_d
     
 class YoloTargetDetector():
-    def __init__(self, board, model_path="best_s_tip_boxes_cross_640_B.pt", auto_am_calib=False) -> None:
+    def __init__(self, board, model_path="best_n_tip_boxes_cross_640_B.pt", auto_am_calib=False) -> None:
         print("Load YoloTargetDetector model...")
         self.model = YOLO(model_path)
         self.board = Board("dummy")
@@ -395,6 +395,7 @@ class YoloTargetDetector():
 
         return np.array(cross), bouter, binner, infered_calib, infered_calib_conf
 
+    @timeit
     def detect(self, img, refine_pts=True, dbg = None):
         self.bouter = None
         self.binner = None

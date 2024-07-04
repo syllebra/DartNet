@@ -7,20 +7,21 @@ import os
 import json
 from target_detector import YoloTargetDetector
 from board import Board, transform_points
-from videocapture import ScreenVideoCapture
+from videocapture import ScreenVideoCapture, IPWebCamVideoCapture
 import playsound
 
 from tools import *
 
 # start webcam
+print("Initilize video capture...")
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180548.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/20240430_180635.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/unicorn_eclipse_hd2_A.mp4")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
 #cap = ScreenVideoCapture(pick=True)
-print("Initilize video capture...")
-cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
+#cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
+cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
 time_mult=.25#0.0001#
 fps = 21.0
 

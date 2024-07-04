@@ -1,6 +1,37 @@
 from PIL import ImageGrab, features, Image
 import numpy as np
 import cv2
+import requests
+
+class IPWebCamVideoCapture():
+    ''' cv2 compatible IP Webcam android app  capture class'''
+    def __init__(self, url="https://92.168.33.35:8080/shot.jpg") -> None:
+        self.url = url
+        self.img = None
+
+    def get(self, flag: int):
+        if(flag == cv2.CAP_PROP_FRAME_WIDTH):
+            return 0 if self.img is None else self.img.shape[1]
+        elif(flag == cv2.CAP_PROP_FRAME_HEIGHT):
+            return 0 if self.img is None else self.img.shape[0]
+        return 0
+    
+    def set(self, flag, val):
+        pass
+
+    def release(self):
+        pass
+
+    def read(self, cv_format = True):
+        img_resp = requests.get(self.url, verify=False)
+        if(img_resp.status_code < 200 or img_resp.status_code>=300):
+            return False, None
+        img_arr = np.array(bytearray(img_resp.content), dtype=np.uint8)
+        img = cv2.imdecode(img_arr,-1)
+        cv2.imshow("AindroidCam", img)
+        
+        return True, img
+   
 
 class ScreenVideoCapture():
     ''' cv2 compatible screen video capture class'''
