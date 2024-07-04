@@ -20,8 +20,8 @@ print("Initilize video capture...")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
 #cap = ScreenVideoCapture(pick=True)
-#cap = cv2.VideoCapture("./datasets/real/vid/home02.avi")
-cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
+cap = cv2.VideoCapture("./datasets/real/vid/home03.avi")
+#cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
 time_mult=.25#0.0001#
 fps = 21.0
 
@@ -64,7 +64,6 @@ locked = False
 last_cal_pts = None
 show_hit_debug = False
 
-pts_cal_dst = None
 crop = None
 
 # create a CLAHE object (Arguments are optional).
@@ -96,37 +95,51 @@ if(perform_simple_interactive_calibration):
     res = []
     test = img.copy()
     manual_rot = 0
+
+    
     pts_cal, M, conf = detector.detect(test,dbg=test)
     if(pts_cal is not None):
         crop = auto_crop(pts_cal, width, height)
+        print(crop)
         img = crop_img(img, crop, clahe= clahe if use_clahe else None)
+    # crop = [0,0,width, height]
+    # img = crop_img(img, crop, clahe= clahe if use_clahe else None)
     while True:
         test = img.copy()
-        pts_cal, M, conf = detector.detect(img,dbg=test)
+        cal_test, M, conf = detector.detect(img,dbg=test)
 
-        # if(M is not None and manual_rot is not None):
-        #     Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
-        #     R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
-        #     R[:-1,:] = Rt
-        #     print(R)
-        #     tmp  = board.transform_cals(R)
-        #     pts_cal = transform_points(tmp, M)
-        #     test = img.copy()
-        #     board.draw(test,pts_cal)
+        def _update_manual(M, cal_test, manual_rot, dbg = None):
+            if(M is not None and manual_rot is not None):
+                Rt = cv2.getRotationMatrix2D(center=(0,0), angle=manual_rot, scale=1)
+                R = np.array([[1,0,0],[0,1,0],[0,0,1]],np.float32)
+                R[:-1,:] = Rt
+                tmp  = board.transform_cals(R)
+                cal_test = transform_points(tmp, M)
+                if(dbg is not None):
+                    board.draw(test,cal_test)
+            return cal_test
+        cal_test = _update_manual(M, cal_test, manual_rot,  test)
 
-        cv2.imshow("Inital Calib", test)
+        view = img.copy()
+        if(cal_test is not None):
+            board.draw(view,cal_test)
+        cv2.imshow("Inital Calib", view)
+        cv2.imshow("Inital Calib Debug", test)
         key = cv2.waitKey(0)
         if(key==ord('q')):
             exit(0)
         elif(key==ord('s')):
+            pts_cal = cal_test
             break
         elif(key==ord('r')):
             pts_cal = None
             break
         elif(key==ord('o')):
             manual_rot += 18
+            pts_cal = _update_manual(M, pts_cal, manual_rot,  test)
         elif(key==ord('p')):
             manual_rot -= 18
+            pts_cal = _update_manual(M, pts_cal, manual_rot,  test)
 
     if(pts_cal is not None):
         locked = True
@@ -167,6 +180,7 @@ while True:
         pts_cal = find_cal_pts(res)
 
         opencv_detected = False
+        print("locked:",locked," force_opencv_detector:",force_opencv_detector," " , pts_cal)
         if(not locked and (force_opencv_detector or pts_cal is None)):
             tps = time.time()
             detect_dbg = img.copy()
@@ -199,7 +213,7 @@ while True:
                 #print(f"PCT:{pct:.2f}")
                 
                 potential_dart_movement = (pct>0.4 and pct < 10)
-                cv2.displayOverlay('Webcam', f"Potential movement:{pct:.2f} > {potential_dart_movement}")
+                #cv2.displayOverlay('Webcam', f"Potential movement:{pct:.2f} > {potential_dart_movement}")
 
                 # dbg = cv2.cvtColor((delta*255).astype(np.uint8),cv2.COLOR_GRAY2BGR)
                 # dbg = cv2.copyMakeBorder(dbg, 10, 10, 10, 10, cv2.BORDER_ISOLATED,value=(255,0,0) if potential_dart_movement else (50,0,0))
@@ -270,7 +284,7 @@ while True:
 
     # First crop resize after initial detection
     if(pts_cal is not None and crop is None):
-        crop = auto_crop(pts_cal)
+        crop = auto_crop(pts_cal,width, height)
 
     
     status = "not_detected"

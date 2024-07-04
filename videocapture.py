@@ -7,7 +7,7 @@ class IPWebCamVideoCapture():
     ''' cv2 compatible IP Webcam android app  capture class'''
     def __init__(self, url="https://92.168.33.35:8080/shot.jpg") -> None:
         self.url = url
-        self.img = None
+        _, self.img = self.read()
 
     def get(self, flag: int):
         if(flag == cv2.CAP_PROP_FRAME_WIDTH):
@@ -17,7 +17,7 @@ class IPWebCamVideoCapture():
         return 0
     
     def set(self, flag, val):
-        pass
+        return True
 
     def release(self):
         pass
@@ -53,7 +53,7 @@ class ScreenVideoCapture():
         return 0
     
     def set(self, flag, val):
-        pass
+        return True
 
     def release(self):
         pass

@@ -395,7 +395,7 @@ class YoloTargetDetector():
 
         return np.array(cross), bouter, binner, infered_calib, infered_calib_conf
 
-    @timeit
+    #@timeit
     def detect(self, img, refine_pts=True, dbg = None):
         self.bouter = None
         self.binner = None

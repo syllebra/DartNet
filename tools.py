@@ -134,7 +134,7 @@ def draw_inference_boxes(img, res, filter=[6], detector=None):
 # Inference section
 # -----------------
 
-def infer(img, mod: YOLO | None = None, **inference_params):
+def infer(img, mod, **inference_params):
     ''' Infer model and return as list of dict containing detected boxes '''
     if(mod is None):
         return None
