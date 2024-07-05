@@ -22,8 +22,8 @@ print("Initilize video capture...")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
 #cap = ScreenVideoCapture(pick=True)
-cap = cv2.VideoCapture("./datasets/real/vid/home03.avi")
-#cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
+#cap = cv2.VideoCapture("./datasets/real/vid/home03.avi")
+cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
 time_mult=.25#0.0001#
 fps = 21.0
 
@@ -92,7 +92,13 @@ perform_simple_interactive_calibration = True
 if(perform_simple_interactive_calibration):
     print("Initial fit on first capture...")
 
-    success, img = cap.read()
+    img = None
+    while True:
+        success, img = cap.read()
+        cv2.imshow('find', img)
+        if(cv2.waitKey(1) == ord(' ')):
+            break
+
     key = -1
     res = []
     test = img.copy()
@@ -138,10 +144,10 @@ if(perform_simple_interactive_calibration):
             break
         elif(key==ord('o')):
             manual_rot += 18
-            pts_cal = _update_manual(M, pts_cal, manual_rot,  test)
+            cal_test = _update_manual(M, pts_cal, manual_rot,  test)
         elif(key==ord('p')):
             manual_rot -= 18
-            pts_cal = _update_manual(M, pts_cal, manual_rot,  test)
+            cal_test = _update_manual(M, pts_cal, manual_rot,  test)
 
     if(pts_cal is not None):
         locked = True
@@ -177,6 +183,7 @@ while True:
 
     if(locked):
         pts_cal = last_cal_pts
+        detector.pts_cal = pts_cal
     else:
         res = infer(img)
         pts_cal = find_cal_pts(res)
