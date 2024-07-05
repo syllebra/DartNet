@@ -2,12 +2,61 @@ from PIL import ImageGrab, features, Image
 import numpy as np
 import cv2
 import requests
+import json
+import asyncio
+import aiohttp
+import sys
+
+if (sys.platform.startswith('win')
+        and sys.version_info[0] == 3
+        and sys.version_info[1] >= 8):
+    policy = asyncio.WindowsSelectorEventLoopPolicy()
+    asyncio.set_event_loop_policy(policy)
 
 class IPWebCamVideoCapture():
     ''' cv2 compatible IP Webcam android app  capture class'''
-    def __init__(self, url="https://92.168.33.35:8080/shot.jpg") -> None:
-        self.url = url
+    def __init__(self, ip="127.0.0.1", port=8080, login ="",password="", poll_delay=500) -> None:
+        #url="https://92.168.33.35:8080/shot.jpg")
+        cred = login if password == "" else f"{login}:{password}"
+        if(cred != ""):
+            cred = cred+"@"
+        self.base_url = f"https://{cred}{ip}:{port}"
+        self.stream_url = f"{self.base_url}/video"
+        self.status_url = f"{self.base_url}/status.json"
+        self.sensors_url = f"{self.base_url}/sensors.json"
+        self.status = {}
+        self.sensors = {}
+
+        self.poll_delay = poll_delay
+        self.last_read = time.time()
+        asyncio.run(self.poll())
+
+        self.capture = cv2.VideoCapture(self.stream_url)
         _, self.img = self.read()
+
+
+    def _ask_json_url(self, url):
+        resp = requests.get(url, verify=False)
+        if(resp.status_code < 200 or resp.status_code>=300):
+            return None
+        data = json.loads(resp.content)
+        return data
+    
+    async def poll(self):
+        # r = self._ask_json_url(self.status_url)
+        # self.status = {} if r is None else r
+        # print(self.status)
+
+        async with aiohttp.ClientSession(trust_env = True) as session:
+            async with session.get(self.status_url, verify_ssl=False) as response:
+                r = await response.json()
+                self.status = {} if r is None else r
+                #print(self.status)
+        # async with aiohttp.ClientSession(trust_env = True) as session:
+        #     async with session.get(self.sensors_url, verify_ssl=False) as response:
+        #         r = await response.json()
+        #         self.sensors = {} if r is None else r
+
 
     def get(self, flag: int):
         if(flag == cv2.CAP_PROP_FRAME_WIDTH):
@@ -23,15 +72,11 @@ class IPWebCamVideoCapture():
         pass
 
     def read(self, cv_format = True):
-        img_resp = requests.get(self.url, verify=False)
-        if(img_resp.status_code < 200 or img_resp.status_code>=300):
-            return False, None
-        img_arr = np.array(bytearray(img_resp.content), dtype=np.uint8)
-        img = cv2.imdecode(img_arr,-1)
-        cv2.imshow("AindroidCam", img)
-        
-        return True, img
-   
+        if(self.poll_delay >=0 and time.time() -self.last_read > self.poll_delay *0.001):
+            asyncio.run(self.poll())
+            self.last_read = time.time()
+        success, img = self.capture.read()
+        return success, img
 
 class ScreenVideoCapture():
     ''' cv2 compatible screen video capture class'''
@@ -190,12 +235,11 @@ class ScreenVideoCapture():
 
 if __name__ == "__main__":
     import time, playsound
-    playsound.playsound("sound/BEEP_Bips horaires 3 (ID 1629)_LS.mp3")
-    cap = ScreenVideoCapture(window_name="ax86 [En fonction] - Oracle VM VirtualBox")
-    #cap.pick()
-    time.sleep(15)
-    playsound.playsound("sound/ROBTVox_Notification lasomarie 2 (ID 2060)_LS.mp3")
-    cap.record()
-    # success, frame = cap.read()
-    # print(success, frame)
-    cv2.destroyAllWindows()
+
+    cap = IPWebCamVideoCapture("192.168.33.35","8080","BilboX", "testip42")
+    while(True):
+        success, img = cap.read()
+        cv2.putText(img, f'Battery: {cap.status["deviceInfo"]["batteryPercent"]} Charging:{cap.status["deviceInfo"]["batteryCharging"]}',(10,10),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,200,0),1)
+        cv2.imshow("Capture", img)
+        if(cv2.waitKey(1)==27):
+            break
