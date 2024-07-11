@@ -1,3 +1,4 @@
+aiohttp
 ultralytics
 mitsuba
 numpy
@@ -9,5 +10,6 @@ scipy
 tqdm
 yacs
 scikit-learn
-pywin32
-playsound==1.2.2
+pywin32 ; sys_platform == 'win32'
+playsound==1.2.2 ; sys_platform == 'win32'
+playsound ; sys_platform != 'win32'

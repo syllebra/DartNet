@@ -22,8 +22,8 @@ print("Initilize video capture...")
 #cap = cv2.VideoCapture("./datasets/real/vid/output3.avi")
 #cap = cv2.VideoCapture("./datasets/real/vid/winmau_blade_6_D.avi")
 #cap = ScreenVideoCapture(pick=True)
-#cap = cv2.VideoCapture("./datasets/real/vid/home03.avi")
-cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
+cap = cv2.VideoCapture("./datasets/real/vid/home03.avi")
+#cap = IPWebCamVideoCapture("https://BilboX:testip42@192.168.33.35:8080/shot.jpg")
 time_mult=.25#0.0001#
 fps = 21.0
 
@@ -92,12 +92,20 @@ perform_simple_interactive_calibration = True
 if(perform_simple_interactive_calibration):
     print("Initial fit on first capture...")
 
+
     img = None
-    while True:
+    if( not isinstance(cap, cv2.VideoCapture)):
+        while True:
+            success, img = cap.read()
+            cv2.imshow('Pose the camera...', img)
+            key = cv2.waitKey(1)
+            if( key == ord('q') or key == 27):
+                exit(0)
+            if( key == ord(' ')):
+                break
+        cv2.destroyAllWindows()
+    else:
         success, img = cap.read()
-        cv2.imshow('find', img)
-        if(cv2.waitKey(1) == ord(' ')):
-            break
 
     key = -1
     res = []
@@ -134,7 +142,7 @@ if(perform_simple_interactive_calibration):
         cv2.imshow("Inital Calib", view)
         cv2.imshow("Inital Calib Debug", test)
         key = cv2.waitKey(0)
-        if(key==ord('q')):
+        if(key==ord('q') or key == 27):
             exit(0)
         elif(key==ord('s')):
             pts_cal = cal_test
@@ -157,7 +165,7 @@ if(perform_simple_interactive_calibration):
             res.append(v)    
         opencv_detected = True
 
-
+cv2.destroyAllWindows()
 print("Starting main loop...")
 ts = time.time()
 last = None
@@ -316,14 +324,14 @@ while True:
     # else:
     #     print(img)
     key = cv2.waitKey(1)
-    if key == ord('q') or key == 27:
+    if(key == ord('q') or key == 27):
         break
-    elif key == ord('r'):
+    elif(key == ord('r')):
         cropped=False
         crop = None
         locked_frames = 0
         lockex = False
-    elif key == ord(' '):
+    elif(key == ord(' ')):
         pause_detection = not pause_detection
         if(not pause_detection):
             last = None

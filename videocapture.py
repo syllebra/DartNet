@@ -6,6 +6,7 @@ import json
 import asyncio
 import aiohttp
 import sys
+import time
 
 if (sys.platform.startswith('win')
         and sys.version_info[0] == 3
