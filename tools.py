@@ -5,6 +5,8 @@ import numpy as np
 import time
 from functools import wraps
 import cv2
+import requests
+import json
 
 from generator.annotate import seg_intersect
 
@@ -84,6 +86,14 @@ def filter_percentiles(data, minim=25, maxim=75, axis=0):
         pass
     return set()
 
+
+def ask_json_url(url):
+    ''' Util function to call a JSON api and receive a dictionnary'''
+    resp = requests.get(url, verify=False)
+    if(resp.status_code < 200 or resp.status_code>=300):
+        return None
+    data = json.loads(resp.content)
+    return data
 
 # Drawing tools section
 # ---------------------
