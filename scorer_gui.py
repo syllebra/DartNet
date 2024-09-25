@@ -3,7 +3,7 @@ from board import Board
 from tools import ask_json_url, add_transparent_image
 from callback_thread import CommandsAndCallbackThread
 
-from granboard import GranBoardApi
+from granboard import GranboardApi
 
 
 board = Board("generator/3D/Boards/canaveral_t520.json")
@@ -11,7 +11,7 @@ button_overlay = cv2.imread('images/pause.png', cv2.IMREAD_UNCHANGED)  # IMREAD_
 button_overlay[:,:,3] = (button_overlay[:,:,2]) *0.65
 
 
-api = GranBoardApi()
+api = GranboardApi()
 # example using BaseThread with callback
 def score(x,y):
     scores = board.get_dart_scores(board.image_cal_pts,([[x,y]]))
@@ -46,7 +46,8 @@ while(True):
     else:
         cv2.imshow("Scorer",img)
 
-    key = cv2.waitKey(50)
+    key = cv2.waitKey(100)
+    api.ask_button_state()
     if(api.button_state and key == ord(' ')):
         api.click_button()
     elif(key == 27 or key == ord('q')):
