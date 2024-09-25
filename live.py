@@ -10,20 +10,9 @@ from board import Board, transform_points
 from videocapture import ScreenVideoCapture, IPWebCamVideoCapture
 import playsound
 
+from granboard import GranboardApi
+
 from tools import *
-import threading
-
-score_url=None#"http://localhost:8088/hit"
-
-def request_task(url, data, headers):
-    try:
-        requests.get(url, json=data, headers=headers)
-    except:
-        pass
-
-def fire_and_forget(url, json=None, headers=None):
-    threading.Thread(target=request_task, args=(url, json, headers)).start()
-
 
 pause_overlay = cv2.imread('images/pause.png', cv2.IMREAD_UNCHANGED)  # IMREAD_UNCHANGED => open image with the alpha channel
 pause_overlay[:,:,3] = (255-pause_overlay[:,:,2]) *0.65
@@ -80,31 +69,8 @@ last_cal_pts = None
 show_hit_debug = False
 
 pause_detection = False
-button_state = False
-        
+
 crop = None
-
-def ask_button_state():
-    global button_state
-    global pause_detection
-    ret = requests.get(f"{score_url}?cb")
-    if(ret.status_code >=200 and ret.status_code<300):
-        bs = json.loads(ret.content.decode("utf8"))
-        #print(bs)
-        button_state = bs["button_state"]
-        if(button_state != pause_detection):
-            pause_detection = button_state
-            last = None
-            last_diff = None
-
-update_time = -1
-update_button_every=200
-def update_button_state():
-    global update_time
-    if(update_time<0 or (time.time()-update_time)*1000 >= update_button_every):
-        threading.Thread(target=ask_button_state, args=()).start()
-        update_time = time.time()
-
 
 # create a CLAHE object (Arguments are optional).
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(2,2))
@@ -210,6 +176,24 @@ last = None
 last_diff = None
 last_dart_time = -1
 
+def button_state_callback(v):
+    global pause_detection
+    global last
+    global last_diff
+    if(v != pause_detection):
+        pause_detection = v
+        last = None
+        last_diff = None
+
+api = GranboardApi(button_state_callback=button_state_callback)
+
+update_time = -1
+update_button_every=200
+def update_button_state():
+    global update_time
+    if(update_time<0 or (time.time()-update_time)*1000 >= update_button_every):
+        update_time = time.time()
+        api.ask_button_state()
 
 while True:
     if(time_mult > 0):
@@ -302,8 +286,8 @@ while True:
                             print(f"{int((time.time()-ts)*1000)}:{tip}=>{text}")
                             playsound.playsound(f"sound/hits/{scores[0]}.mp3", False)
                             #asyncio.create_task(fire_and_forget(session, f"http://localhost:8088/hit?cmd={scores[0]}"))
-                            if(score_url is not None):
-                                fire_and_forget(f"{score_url}?cmd={scores[0]}")
+                            if(api is not None):
+                                api.score(scores[0])
 
                             if(show_hit_debug):
                                 win = f"{int((time.time()-ts)*1000)} ms"
@@ -379,10 +363,10 @@ while True:
             last = None
             last_diff = None
     elif(key == ord('t')):
-        if(score_url is not None):
-            fire_and_forget(f"{score_url}?cb=click")
+        if(api is not None):
+            api.click_button()
 
-    if(score_url is not None):
+    if(api is not None):
         update_button_state()
 cap.release()
 cv2.destroyAllWindows()

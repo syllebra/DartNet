@@ -27,7 +27,8 @@ def timeit(func):
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
-        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
+        #print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
+        print(f'Function {func.__name__} Took {total_time:.4f} seconds')
         return result
     return timeit_wrapper
 
@@ -180,7 +181,7 @@ def add_transparent_image(background, foreground, x_offset=None, y_offset=None):
 
 # Inference section
 # -----------------
-
+@timeit
 def infer(img, mod, **inference_params):
     ''' Infer model and return as list of dict containing detected boxes '''
     if(mod is None):
