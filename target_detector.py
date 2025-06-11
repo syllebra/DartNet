@@ -341,6 +341,7 @@ class YoloTargetDetector():
     def __init__(self, board, model_path="best_n_tip_boxes_cross_640_B.pt", auto_am_calib=False) -> None:
         print("Load YoloTargetDetector model...")
         self.model = YOLO(model_path)
+        #self.model.to('cpu')
         self.board = Board("dummy")
         if(board is not None):
             self.board = board if isinstance(board, Board) else Board(board.replace(".jpg",".json"))
@@ -373,7 +374,7 @@ class YoloTargetDetector():
         binner = None
         bouter = None
         for r in res:
-            x1, y1, x2, y2 = r["x1"],r["y1"],r["x2"],r["y2"]
+            x1, y1, x2, y2 = r["x1"].cpu(),r["y1"].cpu(),r["x2"].cpu(),r["y2"].cpu()
 
             confidence = r["conf"]
 

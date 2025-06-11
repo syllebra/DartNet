@@ -30,7 +30,7 @@ class IPWebCamVideoCapture():
 
         self.poll_delay = poll_delay
         self.last_read = time.time()
-        asyncio.run(self.poll())
+        #asyncio.run(self.poll())
 
         self.capture = cv2.VideoCapture(self.stream_url)
         _, self.img = self.read()
@@ -43,20 +43,22 @@ class IPWebCamVideoCapture():
         data = json.loads(resp.content)
         return data
     
-    async def poll(self):
-        # r = self._ask_json_url(self.status_url)
-        # self.status = {} if r is None else r
-        # print(self.status)
+    # async def poll(self):
+    #     # r = self._ask_json_url(self.status_url)
+    #     # self.status = {} if r is None else r
+    #     # print(self.status)
 
-        async with aiohttp.ClientSession(trust_env = True) as session:
-            async with session.get(self.status_url, verify_ssl=False) as response:
-                r = await response.json()
-                self.status = {} if r is None else r
-                #print(self.status)
-        # async with aiohttp.ClientSession(trust_env = True) as session:
-        #     async with session.get(self.sensors_url, verify_ssl=False) as response:
-        #         r = await response.json()
-        #         self.sensors = {} if r is None else r
+    #     async with aiohttp.ClientSession(trust_env = True) as session:
+    #         async with session.get(self.status_url, verify_ssl=False) as response:
+    #             r = await response.json()
+    #             self.status = {} if r is None else r
+
+                
+    #             #print(self.status)
+    #     # async with aiohttp.ClientSession(trust_env = True) as session:
+    #     #     async with session.get(self.sensors_url, verify_ssl=False) as response:
+    #     #         r = await response.json()
+    #     #         self.sensors = {} if r is None else r
 
 
     def get(self, flag: int):
@@ -73,9 +75,9 @@ class IPWebCamVideoCapture():
         pass
 
     def read(self, cv_format = True):
-        if(self.poll_delay >=0 and time.time() -self.last_read > self.poll_delay *0.001):
-            asyncio.run(self.poll())
-            self.last_read = time.time()
+        # if(self.poll_delay >=0 and time.time() -self.last_read > self.poll_delay *0.001):
+        #     asyncio.run(self.poll())
+        #     self.last_read = time.time()
         success, img = self.capture.read()
         return success, img
 

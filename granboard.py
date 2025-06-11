@@ -4,9 +4,11 @@ import threading
 import requests
 import json
 
-class GranboardApi():
-    def __init__(self, granboard_url = "http://192.168.31.191:8822",  button_state_callback=None) -> None:
+
+class GranboardApi:
+    def __init__(self, granboard_url="http://192.168.31.192:8822", button_state_callback=None, dummy=False) -> None:
         self.url = granboard_url
+        self.dummy = dummy
         self.command_map = {
             "S1": "2.3@",
             "S2": "9.1@",
@@ -91,31 +93,37 @@ class GranboardApi():
             "SBULL": "8.0@",
             "DBULL": "4.0@",
             "MISS": "MISS@",
-            "OUT": "OUT@"
+            "OUT": "OUT@",
         }
         self.button_state = False
         self.button_state_callback = button_state_callback
+
         def cb(r):
             self.button_state = r["button_state"]
-            #print(f"callback function called {r}")
-            if(self.button_state_callback is not None):
+            # print(f"callback function called {r}")
+            if self.button_state_callback is not None:
                 self.button_state_callback(self.button_state)
 
-
     def _ask_button_state(self):
+        if self.dummy:
+            return
         ret = requests.get(f"{self.url}/hit?cb")
-        if(ret.status_code >=200 and ret.status_code<300):
+        if ret.status_code >= 200 and ret.status_code < 300:
             bs = json.loads(ret.content.decode("utf8"))
-            #print(bs)
-            if(bs["button_state"] != self.button_state):
+            # print(bs)
+            if bs["button_state"] != self.button_state:
                 self.button_state = bs["button_state"]
-                if(self.button_state_callback is not None):
+                if self.button_state_callback is not None:
                     self.button_state_callback(self.button_state)
-    
+
     def ask_button_state(self):
+        if self.dummy:
+            return
         threading.Thread(target=self._ask_button_state, args=()).start()
 
     def request_task(self, url, data, headers):
+        if self.dummy:
+            return
         try:
             requests.get(url, json=data, headers=headers)
         except:
@@ -125,23 +133,24 @@ class GranboardApi():
         threading.Thread(target=self.request_task, args=(url, json, headers)).start()
 
     def score(self, sc):
-        if(sc == "0"):
+        if sc == "0":
             sc = "OUT"
-        elif(sc == "DB"):
+        elif sc == "DB":
             sc = "DBULL"
-        elif(sc == "B"):
+        elif sc == "B":
             sc = "SBULL"
-        elif("D" not in sc and "T" not in sc):
+        elif "D" not in sc and "T" not in sc:
             sc = f"S{sc}OUT"
         command = self.command_map[sc]
-        print(sc,"=>",command)
-        self.fire_and_forget(self.url+"/hit?cmd="+command)
+        print(sc, "=>", command)
+        self.fire_and_forget(self.url + "/hit?cmd=" + command)
 
     def stop(self):
         self.thread.wait_stop()
-        if(self.thread_poll):
+        if self.thread_poll:
             self.thread_poll.wait_stop()
 
     def click_button(self):
-        self.fire_and_forget(self.url+"/hit?cb=click")
-
+        if self.dummy:
+            return
+        self.fire_and_forget(self.url + "/hit?cb=click")
