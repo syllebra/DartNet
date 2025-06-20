@@ -9,11 +9,18 @@ import playsound
 from ultralytics import YOLO
 
 from board import Board, transform_points
-from dart_impact_detector import DeltaVideoAccelImpactDetector, DeltaVideoOnlyDartDetector
-from granboard import GranboardApi
+from dart_impact_detector import (
+    DeltaVideoAccelImpactDetector,
+    DeltaVideoOnlyDartDetector,
+)
+from mqtt.mdns_mqtt import RobustMQTTClient
+
+# from granboard import GranboardApi
 from target_detector import YoloTargetDetector
 from tools import *
 from videocapture import IPWebCamVideoCapture, ScreenVideoCapture
+
+topic = "dartnet/hit"
 
 pause_overlay = cv2.imread(
     "images/pause.png", cv2.IMREAD_UNCHANGED
@@ -35,6 +42,9 @@ is_video = False
 time_mult = 1.25  # 0.25  # 0.0001#
 fps = 21.0
 
+print("Initializing MQTT...")
+mqtt_client = RobustMQTTClient("DartNet Video/Accelrometer Dart Detector")
+mqtt_client.connect()
 
 board_img_path = "generator/3D/Boards/canaveral_t520.jpg"
 # board_img_path = 'generator/3D/Boards/unicorn-eclipse-hd2.jpg'
@@ -194,7 +204,7 @@ def button_state_callback(v):
         delta_detector.on_pause(pause_detection)
 
 
-api = GranboardApi(button_state_callback=button_state_callback, dummy=True)
+# api = GranboardApi(button_state_callback=button_state_callback, dummy=True)
 
 update_time = -1
 update_button_every = 200
@@ -204,10 +214,11 @@ def update_button_state():
     global update_time
     if update_time < 0 or (time.time() - update_time) * 1000 >= update_button_every:
         update_time = time.time()
-        api.ask_button_state()
+        # api.ask_button_state()
 
 
 while True:
+    connected = mqtt_client.check()
     if time_mult > 0 and is_video:
         try:
             # cap.set(cv2.CAP_PROP_POS_MSEC, (time.time()-ts)*1000*time_mult)
@@ -270,8 +281,9 @@ while True:
                 print(f"{int((time.time()-ts)*1000)}:{tip}=>{text}")
                 playsound.playsound(f"sound/hits/{scores[0]}.mp3", False)
                 # asyncio.create_task(fire_and_forget(session, f"http://localhost:8088/hit?cmd={scores[0]}"))
-                if api is not None:
-                    api.score(scores[0])
+                # if api is not None:
+                #    api.score(scores[0])
+                published = mqtt_client.publish(topic, scores[0], qos=1)
 
                 if show_hit_debug:
                     win = f"{int((time.time()-ts)*1000)} ms"
@@ -339,11 +351,11 @@ while True:
             last = None
             last_diff = None
     elif key == ord("t"):
-        if api is not None:
-            api.click_button()
-
-    if api is not None:
-        update_button_state()
+        # if api is not None:
+        #     api.click_button()
+        pass
+    # if api is not None:
+    #     update_button_state()
 
 delta_detector.stop()
 cap.release()
