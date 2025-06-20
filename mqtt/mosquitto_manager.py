@@ -756,7 +756,9 @@ def setup_signal_handlers(broker_manager):
 def main():
     parser = argparse.ArgumentParser(description="Enhanced MQTT broker with mDNS advertisement and Windows fixes")
     parser.add_argument("-p", "--port", type=int, default=1883, help="MQTT broker port (default: 1883)")
-    parser.add_argument("-w", "--websocket-port", type=int, help="WebSocket port for MQTT over WebSockets")
+    parser.add_argument(
+        "-w", "--websocket-port", type=int, default=8083, help="WebSocket port for MQTT over WebSockets"
+    )
     parser.add_argument("-n", "--name", type=str, default="MQTT Broker", help="Service name for mDNS advertisement")
     parser.add_argument("--mosquitto-path", type=str, help="Full path to mosquitto executable")
     parser.add_argument("-c", "--config", type=str, help="Custom Mosquitto configuration file path")

@@ -9,7 +9,7 @@ from tools import add_transparent_image
 topic = "dartnet/hit"
 
 
-board = Board("generator/3D/Boards/canaveral_t520.json")
+board = Board("generator/3D/Boards/winmau_blade_6.json")
 button_overlay = cv2.imread(
     "images/pause.png", cv2.IMREAD_UNCHANGED
 )  # IMREAD_UNCHANGED => open image with the alpha channel
@@ -43,7 +43,8 @@ if __name__ == "__main__":
             #     return
 
             # if(debug_test is not None):
-            # draw_inference_boxes(debug_test,[{"x1":x,"y1":y,"x2":x,"y2":y,"conf":1.0,"cls":0}],filter=[0],detector = detector)
+            # draw_inference_boxes(debug_test,[{"x1":x,"y1":y,"x2":x,"y2":y,
+            #   "conf":1.0,"cls":0}],filter=[0],detector = detector)
             # cv2.imshow("Dbg", debug_test)
 
             score(x, y)
@@ -53,7 +54,7 @@ if __name__ == "__main__":
     cv2.resizeWindow("Scorer", 800, 800)
     cv2.setMouseCallback("Scorer", drawfunction)
 
-    img = cv2.imread("generator/3D/Boards/canaveral_t520.jpg")
+    img = cv2.imread("generator/3D/Boards/winmau_blade_6.jpg")
 
     while True:
         connected = mqtt_client.check()
