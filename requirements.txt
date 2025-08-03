@@ -1,6 +1,6 @@
 aiohttp
 ultralytics
-mitsuba
+mitsuba<3.6
 numpy
 opencv_python
 pandas
